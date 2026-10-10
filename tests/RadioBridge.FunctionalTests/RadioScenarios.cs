@@ -91,6 +91,9 @@ public sealed class RadioScenarios(AppFixture fx) : IAsyncLifetime
     [Fact]
     public async Task Fast_spin_accelerates_and_panel_ends_in_agreement_with_the_sim()
     {
+        // The detents arrive over HTTP, far slower than a hand spinning the knob, so widen the thresholds:
+        // otherwise whether this counts as a fast spin would depend on how fast the machine is.
+        await App.PutSettingsAsync(fx.InitialSettings with { ComAcceleration = new AccelerationSettings { FastDetentMs = 1000, MediumDetentMs = 2000 } });
         await App.SelectAsync(Upper, Selector.Com1);
         var before = await GivenAsync(s => s.Com1.StandbyKhz == 121_500, ($"{Radios}com1_standby_frequency_hz_833", 121_500));
 
@@ -294,6 +297,30 @@ public sealed class RadioScenarios(AppFixture fx) : IAsyncLifetime
         }
 
         await App.WaitForAsync(s => s.Sim.Name == "X-Plane", "the real simulator to take over", timeoutMs: 15_000);
+    }
+
+    [SkippableFact]
+    public async Task Explains_why_xplane_cannot_connect_and_recovers_when_it_is_fixed()
+    {
+        Skip.If(fx.Emulator is null, "Emulator only: needs an X-Plane that can be made to refuse connections.");
+
+        await fx.Emulator!.StopAsync();
+        fx.Emulator.RefuseConnections = true;
+        try
+        {
+            await fx.Emulator.StartAsync();
+
+            var state = await App.WaitForAsync(s => s.Sim.Notice is not null, "the app to explain the refusal", timeoutMs: 15_000);
+
+            Assert.Contains("Disable incoming traffic", state.Sim.Notice!.Text);
+            Assert.False(state.Sim.Connected);
+        }
+        finally
+        {
+            fx.Emulator.RefuseConnections = false;
+        }
+
+        await App.WaitForAsync(s => s.Sim.Connected && s.Sim.Notice is null, "the app to connect and drop the notice", timeoutMs: 15_000);
     }
 
     [SkippableFact]

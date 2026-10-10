@@ -9,7 +9,7 @@ namespace RadioBridge.FunctionalTests;
 
 public sealed record PanelInfo(bool Connected, Selector? Upper, Selector? Lower, RowActivity UpperActivity, RowActivity LowerActivity);
 
-public sealed record SimInfo(bool Connected, string Name, RadioState State);
+public sealed record SimInfo(bool Connected, string Name, RadioState State, SimNotice? Notice);
 
 /// <summary>GET /api/state.</summary>
 public sealed record AppState(PanelInfo Panel, PanelDisplays Displays, string DisplayReport, SimInfo Sim, BridgeSettings Settings);

@@ -88,16 +88,24 @@ If RadioBridge doesn't connect, open X-Plane's **Settings › Network** and make
 incoming traffic** is off. If you changed X-Plane's port (`--web_server_port`), set the same port
 in RadioBridge's settings.
 
-**MSFS 2020 / 2024** (Windows). RadioBridge needs Microsoft's 64-bit `SimConnect.dll`, which it
-doesn't ship. It looks in these places, in order:
+**MSFS 2020 / 2024** (Windows). MSFS is reached through Microsoft's SimConnect library. Microsoft
+hasn't said whether that file may be redistributed, so RadioBridge doesn't ship one. It uses the
+copy that comes **with MSFS itself** (`SimConnect_internal.dll` in the MSFS 2024 folder,
+`SimConnect.dll` in MSFS 2020's), so normally there is nothing to install or configure. It looks in
+these places, in order, and uses the first 64-bit library it can load:
 
-1. The `SIMCONNECT_DLL` environment variable (a file or a folder).
-2. Next to `RadioBridge.exe`.
-3. The MSFS SDKs: `%MSFS2024_SDK%` and `%MSFS_SDK%` (set by the SDK installers), then
-   `C:\MSFS 2024 SDK` and `C:\MSFS SDK`, each under `SimConnect SDK\lib\`.
+1. The file or folder chosen in **Settings › Simulators › SimConnect library** (or with the
+   *Locate SimConnect.dll…* button).
+2. The `SIMCONNECT_DLL` environment variable (a file or a folder).
+3. Next to `RadioBridge.exe`.
+4. The folder of the running MSFS, then the Steam installs of MSFS 2024 and MSFS 2020.
+5. The MSFS SDKs: `%MSFS2024_SDK%` and `%MSFS_SDK%`, then `C:\MSFS 2024 SDK` and `C:\MSFS SDK`,
+   each under `SimConnect SDK\lib\`.
 
-If you don't have an SDK installed, copy a 64-bit `SimConnect.dll` next to `RadioBridge.exe`. The
-log names the DLL it uses, or lists every place it searched.
+If MSFS is running and none of these works (for example a Microsoft Store install, whose folder
+can't be read), the window says so and offers **Locate SimConnect.dll…**: point it at any 64-bit
+`SimConnect.dll`, such as the one in the MSFS SDK. The log names the library in use, or lists every
+place it searched.
 
 ### 4. Linux and macOS
 
@@ -235,7 +243,7 @@ run with both `--automation` and `--no-panel`, which never touches the panel (se
 | The window is gone but RadioBridge still runs | The tray option is on and the window was closed. Launch RadioBridge again to bring it back, or use the tray icon (look in the hidden icons, `^`). |
 | Building fails with "file is locked by RadioBridge" | A running RadioBridge locks its own build output. Quit it first (see the row above if its window is hidden). |
 | *No simulator* with X-Plane running | X-Plane 12.1.4+? **Disable incoming traffic** off? Same port? The log says exactly why it can't connect. |
-| *No simulator* with MSFS running | Was SimConnect.dll found? The log names the DLL it uses or lists where it searched. It must be the 64-bit DLL. |
+| *No simulator* with MSFS running | The window shows a banner when it can't find a usable SimConnect library: use **Locate SimConnect.dll…** (it must be the 64-bit one). The log names the library it uses, or lists every place it searched. |
 | COM steps snap back to the previous value | That aircraft's radio only supports 25 kHz. Hold ACT/STBY on COM to switch to 25 kHz steps. |
 | Add-on aircraft ignores the panel | Some airliners (custom radio management panels) don't use the simulator's standard radios, so no external tool can tune them this way. |
 

@@ -69,6 +69,12 @@ public sealed class XPlaneEmulator : IAsyncDisposable
 
     public string Version { get; set; } = "12.4.4-emulated";
 
+    /// <summary>Behave like X-Plane 12.1.1-12.1.3: only the v1 API, no capabilities endpoint.</summary>
+    public bool Api1Only { get; set; }
+
+    /// <summary>Behave like X-Plane with "Disable incoming traffic" on: every request gets 403.</summary>
+    public bool RefuseConnections { get; set; }
+
     public bool IsRunning => _app is not null;
 
     public int ConnectedClients => _clients.Count;
@@ -94,11 +100,21 @@ public sealed class XPlaneEmulator : IAsyncDisposable
         var app = builder.Build();
         app.UseWebSockets();
 
-        app.MapGet("/api/capabilities", () => Results.Json(new JsonObject
+        app.Use(async (context, next) =>
         {
-            ["api"] = new JsonObject { ["versions"] = new JsonArray("v1", "v2") },
-            ["x-plane"] = new JsonObject { ["version"] = Version },
-        }));
+            if (RefuseConnections)
+                context.Response.StatusCode = 403;
+            else
+                await next(context);
+        });
+        app.MapGet("/api/capabilities", () => Api1Only
+            ? Results.NotFound()
+            : Results.Json(new JsonObject
+            {
+                ["api"] = new JsonObject { ["versions"] = new JsonArray("v1", "v2") },
+                ["x-plane"] = new JsonObject { ["version"] = Version },
+            }));
+        app.MapGet("/api/v1/datarefs/count", () => Results.Json(new { data = _byName.Count }));
         app.MapGet("/api/v2/datarefs", (HttpRequest r) =>
             Results.Json(new { data = Filter(r, _byName.Keys).Select(n => _byName[n]).Select(d => new { id = d.Id, name = d.Name, value_type = d.Type, is_writable = true }) }));
         app.MapGet("/api/v2/datarefs/{id:long}/value", (long id) =>

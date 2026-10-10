@@ -124,7 +124,7 @@ public sealed class AutomationServer : IDisposable
             },
             displays = view.Displays,
             displayReport = Convert.ToHexString(_panel.DisplayReport),
-            sim = new { connected = _sim.IsConnected, name = _sim.Name, state = _sim.State },
+            sim = new { connected = _sim.IsConnected, name = _sim.Name, state = _sim.State, notice = view.Notice },
             settings = _settings.Current,
         };
     }

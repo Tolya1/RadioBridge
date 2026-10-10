@@ -8,6 +8,7 @@ using RadioBridge.Core.Sim;
 namespace RadioBridge.Core;
 
 /// <summary>What the UI shows: connection state, selector positions, the four displays and live input.</summary>
+/// <param name="Notice">What keeps a simulator from connecting, when the user can do something about it.</param>
 public sealed record PanelView(
     bool PanelConnected,
     bool SimConnected,
@@ -16,7 +17,8 @@ public sealed record PanelView(
     Selector? Lower,
     PanelDisplays Displays,
     RowActivity UpperActivity,
-    RowActivity LowerActivity);
+    RowActivity LowerActivity,
+    SimNotice? Notice = null);
 
 /// <summary>Live input on one row, so the UI can show that the controls react (with or without a sim).</summary>
 /// <param name="InnerTurns">Net inner-knob detents since start, clockwise positive.</param>
@@ -283,7 +285,7 @@ public sealed class PanelController : IDisposable
             var displays = new PanelDisplays(ul, ur, ll, lr);
             _panel.Show(displays);
 
-            view = new PanelView(_panel.IsConnected, simConnected, simConnected ? _sim.Name : "", _selectors[0], _selectors[1], displays, _activity[0], _activity[1]);
+            view = new PanelView(_panel.IsConnected, simConnected, simConnected ? _sim.Name : "", _selectors[0], _selectors[1], displays, _activity[0], _activity[1], _sim.Notice);
             if (view == View)
                 return;
             View = view;

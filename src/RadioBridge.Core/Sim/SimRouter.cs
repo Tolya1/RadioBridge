@@ -15,6 +15,7 @@ public sealed class SimRouter : ISimBackend
     private readonly ILogger _log;
     private readonly object _gate = new();
     private ISimBackend? _active;
+    private SimNotice? _lastNotice;
 
     public SimRouter(IEnumerable<ISimBackend> backends, ISimBackend? fallback = null, ILogger<SimRouter>? log = null)
     {
@@ -34,6 +35,23 @@ public sealed class SimRouter : ISimBackend
     public bool IsConnected => Active is not null;
     public RadioState State => Active?.State ?? RadioState.Empty;
 
+    /// <summary>
+    /// What keeps the real simulators from connecting (test mode doesn't count). Null while one of them is
+    /// connected, since then there is nothing to fix.
+    /// </summary>
+    public SimNotice? Notice
+    {
+        get
+        {
+            if (_backends.Any(b => b.IsConnected))
+                return null;
+            var notices = _backends.Select(b => b.Notice).OfType<SimNotice>().ToList();
+            return notices.Count == 0
+                ? null
+                : new SimNotice(string.Join(" ", notices.Select(n => n.Text)), notices.Any(n => n.CanLocateSimConnect));
+        }
+    }
+
     public event Action? Changed;
 
     private IEnumerable<ISimBackend> All => _fallback is null ? _backends : _backends.Append(_fallback);
@@ -49,17 +67,21 @@ public sealed class SimRouter : ISimBackend
     private void OnBackendChanged(ISimBackend backend)
     {
         ISimBackend? before, after;
+        bool noticeChanged;
         lock (_gate)
         {
             before = _active;
             _active = after = Choose();
+            var notice = Notice;
+            noticeChanged = notice != _lastNotice;
+            _lastNotice = notice;
         }
 
         if (before != after)
             _log.LogInformation("Active simulator: {Sim}.", after?.Name ?? "none");
 
         // Other sims' value updates are irrelevant while they are not the active one.
-        if (before != after || backend == after)
+        if (before != after || backend == after || noticeChanged)
             Changed?.Invoke();
     }
 

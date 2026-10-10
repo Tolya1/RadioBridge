@@ -75,6 +75,14 @@ there first when a scenario fails. The failure message also includes the last di
 - Knob turns, a held ACT/STBY and a long press are reported for the window's knob and switch view.
 - Test mode drives the panel without a simulator and steps aside when one connects (emulator only).
 - The app survives the simulator quitting and restarting (emulator only).
+- An X-Plane that refuses connections is explained in a notice, which goes away once it is fixed
+  (emulator only).
+
+The MSFS side is covered by unit tests (the library search order on a pretend machine, and the
+notices) and by `mise run functional:msfs` against a live sim. The latter **changes the aircraft's
+radios**. A read-only check that RadioBridge finds the sim's library and reads its radios is to run
+the packaged exe from an empty folder with `--headless --automation <port>` while MSFS is running,
+then read `GET /api/state`.
 
 ## Automation API
 
@@ -134,4 +142,5 @@ Behind the API is a small radio model. COM radios snap to 8.33 or 25 kHz channel
 sharing RadioBridge's, so a wrong name on either side makes a test fail.
 
 Run it on its own with `mise run emulator`, which listens on port 8086 like X-Plane. Add `--com25` for
-25 kHz-only radios.
+25 kHz-only radios, `--refuse` to act like X-Plane with "Disable incoming traffic" on (to see the
+window's notice banner), or `--api1` to act like an X-Plane too old for Web API v2.

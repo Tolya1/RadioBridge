@@ -4,8 +4,8 @@ using System.Runtime.InteropServices;
 namespace RadioBridge.Core.Sim.Msfs;
 
 /// <summary>
-/// The few native SimConnect.dll (x64) functions we need. SimConnect.dll is Microsoft's, so it is not
-/// shipped; <see cref="SimConnectLocator"/> finds a copy at run time.
+/// The few native SimConnect (x64) functions we need. The library is Microsoft's and is never shipped;
+/// <see cref="SimConnectLocator"/> finds a copy on the machine and <see cref="TryLoad"/> loads it.
 /// </summary>
 internal static partial class SimConnectNative
 {
@@ -31,18 +31,49 @@ internal static partial class SimConnectNative
     public const int SimObjectRequestIdOffset = 12;   // SIMCONNECT_RECV_SIMOBJECT_DATA.dwRequestID
     public const int SimObjectDataOffset = 40;        // SIMCONNECT_RECV_SIMOBJECT_DATA.dwData
 
-    private static string? _resolvedPath;
+    private static readonly object Gate = new();
+    private static IntPtr _library;
+    private static string? _loadedPath;
 
     static SimConnectNative() => NativeLibrary.SetDllImportResolver(typeof(SimConnectNative).Assembly, Resolve);
 
-    /// <summary>Path of the SimConnect.dll that was (or would be) loaded, for diagnostics.</summary>
-    public static string? ResolvedPath => _resolvedPath ??= SimConnectLocator.Find();
+    /// <summary>The library that is loaded into this process, or null.</summary>
+    public static string? LoadedPath
+    {
+        get { lock (Gate) return _loadedPath; }
+    }
+
+    /// <summary>
+    /// Loads the library at <paramref name="path"/>. A native library can't be swapped once loaded, so
+    /// when one is already loaded this succeeds without changing anything.
+    /// </summary>
+    public static bool TryLoad(string path, out string? error)
+    {
+        lock (Gate)
+        {
+            error = null;
+            if (_library != IntPtr.Zero)
+                return true;
+            try
+            {
+                _library = NativeLibrary.Load(path);
+                _loadedPath = path;
+                return true;
+            }
+            catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+    }
 
     private static IntPtr Resolve(string name, Assembly assembly, DllImportSearchPath? searchPath)
     {
         if (!name.Equals(Dll, StringComparison.OrdinalIgnoreCase))
             return IntPtr.Zero;
-        return ResolvedPath is { } path && NativeLibrary.TryLoad(path, out var handle) ? handle : IntPtr.Zero;
+        lock (Gate)
+            return _library;
     }
 
     [LibraryImport(Dll, EntryPoint = "SimConnect_Open", StringMarshalling = StringMarshalling.Utf8)]

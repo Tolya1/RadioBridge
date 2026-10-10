@@ -81,6 +81,14 @@
             </StackPanel>
         </Grid>
 
+        <!-- why no simulator connects, when it is something the user can fix -->
+        <Border IsVisible="{Binding HasNotice}" Background="#33280f" BorderBrush="#c98a1b" BorderThickness="1" CornerRadius="8" Padding="12,8">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <TextBlock Text="{Binding Notice}" TextWrapping="Wrap" Foreground="#f2d9a6" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Content="Locate SimConnect.dll…" IsVisible="{Binding CanLocateSimConnect}" Click="OnLocateSimConnect" />
+            </Grid>
+        </Border>
+
         <!-- panel replica -->
         <Border Classes="panel">
             <StackPanel Spacing="10">
@@ -159,6 +167,15 @@
                     <CheckBox IsChecked="{Binding XPlaneEnabled}" Content="X-Plane, Web API port" />
                     <NumericUpDown Minimum="1" Maximum="65535" Width="150" Value="{Binding XPlanePort}" />
                 </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,6,0,0">
+                    <TextBlock Text="SimConnect library" VerticalAlignment="Center" />
+                    <TextBlock Classes="caption" Text="{Binding SimConnectLibrary}" ToolTip.Tip="{Binding SimConnectLibrary}"
+                               MaxWidth="330" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <Button Content="Browse…" Click="OnLocateSimConnect" />
+                    <Button Content="Automatic" IsVisible="{Binding HasSimConnectPath}" Click="OnUseAutomaticSimConnect" />
+                </StackPanel>
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="MSFS is reached through its SimConnect library. RadioBridge uses the one in your MSFS installation, so you only need to browse if it can't find one." />
 
                 <TextBlock Classes="caption" Margin="0,10,0,0" TextWrapping="Wrap" Text="{Binding SettingsPath, StringFormat='Settings: {0}'}" />
                 <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding LogPath, StringFormat='Logs: {0}'}" />

@@ -40,7 +40,7 @@ public sealed class BridgeHost : IDisposable
 
         var backends = new List<ISimBackend>();
         if (Settings.Current.MsfsEnabled)
-            backends.Add(new MsfsBackend(loggers.CreateLogger<MsfsBackend>()));
+            backends.Add(new MsfsBackend(() => Settings.Current.SimConnectPath, log: loggers.CreateLogger<MsfsBackend>()));
         if (Settings.Current.XPlaneEnabled)
             backends.Add(new XPlaneBackend(() => Settings.Current.XPlanePort, loggers.CreateLogger<XPlaneBackend>()));
         var test = new TestSimBackend(() => options.TestMode || Settings.Current.TestMode);

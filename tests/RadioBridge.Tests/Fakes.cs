@@ -24,11 +24,18 @@ internal sealed class FakeSim(string name = "FakeSim") : ISimBackend
     public bool IsConnected { get; private set; }
     public RadioState State { get; private set; } = RadioState.Empty;
     public List<SimCommand> Sent { get; } = [];
+    public SimNotice? Notice { get; private set; }
 
     public event Action? Changed;
 
     public void Start() { }
     public void Send(SimCommand command) => Sent.Add(command);
+
+    public void Warn(SimNotice? notice)
+    {
+        Notice = notice;
+        Changed?.Invoke();
+    }
 
     public void Connect(RadioState state)
     {

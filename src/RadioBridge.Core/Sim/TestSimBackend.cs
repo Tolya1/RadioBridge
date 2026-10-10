@@ -51,6 +51,8 @@ public sealed class TestSimBackend : ISimBackend
         get { lock (_gate) return _connected ? _state : RadioState.Empty; }
     }
 
+    public SimNotice? Notice => null;
+
     public event Action? Changed;
 
     public void Start()

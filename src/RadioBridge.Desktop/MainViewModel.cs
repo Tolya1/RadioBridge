@@ -34,6 +34,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string PanelStatus => _view.PanelConnected ? "Panel connected" : "Panel not found";
     public bool SimConnected => _view.SimConnected;
     public string SimStatus => _view.SimConnected ? _view.SimName : "No simulator";
+
+    // What keeps a simulator from connecting, when the user can do something about it.
+    public bool HasNotice => _view.Notice is not null;
+    public string Notice => _view.Notice?.Text ?? "";
+    public bool CanLocateSimConnect => _view.Notice?.CanLocateSimConnect == true;
     public string UpperMode => ModeText(_view.Upper);
     public string LowerMode => ModeText(_view.Lower);
     public string UpperLeft => _view.Displays.UpperLeft;
@@ -151,6 +156,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
         get => S.StartInTray;
         set => Update(s => s with { StartInTray = value });
     }
+
+    public bool HasSimConnectPath => !string.IsNullOrWhiteSpace(S.SimConnectPath);
+    public string SimConnectLibrary => HasSimConnectPath ? S.SimConnectPath! : "found automatically";
+
+    /// <summary>Uses this SimConnect library for MSFS, or searches for one again when null.</summary>
+    public void SetSimConnectPath(string? path) => Update(s => s with { SimConnectPath = path });
 
     public bool MsfsEnabled
     {

@@ -11,8 +11,10 @@ mise run package:windows    # the Windows release zip, from a clean checkout
 The package is a normal `dotnet publish` with `-p:SingleFile=true`, which the project file turns into
 self-contained, single-file, compressed output. Nothing else is needed in the folder. Specifically:
 
-- **SimConnect.dll is never included.** It is Microsoft's and is found on the user's machine at run
-  time. A copy in `libs/` is for local builds only and is excluded from publishing.
+- **SimConnect is never included.** It is Microsoft's, and its redistribution terms are unclear: the
+  MSFS SDK EULA allows only "distributable code" and no document says this library is. RadioBridge
+  uses the copy in the user's own MSFS install instead (see the README), which needs no SDK and ships
+  nothing from Microsoft. A copy in `libs/` is for local builds only and is excluded from publishing.
 - **Debug symbols are not included.** Skia alone ships 100 MB of them; a build step deletes them.
 - **No trimming and no Native AOT.** They would shrink the file, but the settings and automation JSON
   use reflection and Avalonia relies on it. Revisit only with tests that cover the trimmed build.

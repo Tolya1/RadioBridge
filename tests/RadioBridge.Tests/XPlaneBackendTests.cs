@@ -143,5 +143,70 @@ public class XPlaneDiagnosticsTests
         await Wait.Until(() => log.Messages.Any(m => m.Contains("Something other than X-Plane")), "the warning");
         Assert.False(backend.IsConnected);
         Assert.DoesNotContain(log.Messages, m => m.Contains("12.1.4 or newer"));
+        Assert.Null(backend.Notice); // another program isn't certainly X-Plane's problem: log only, no banner
+    }
+}
+
+public sealed class XPlaneNoticeTests : IAsyncLifetime
+{
+    private readonly XPlaneEmulator _xplane = new();
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync() => await _xplane.DisposeAsync();
+
+    private async Task<XPlaneBackend> StartBackendAsync()
+    {
+        await _xplane.StartAsync();
+        var backend = new XPlaneBackend(() => _xplane.Port);
+        backend.Start();
+        return backend;
+    }
+
+    [Fact]
+    public async Task X_plane_that_refuses_connections_explains_which_setting_to_change()
+    {
+        _xplane.RefuseConnections = true;
+        using var backend = await StartBackendAsync();
+
+        await Wait.Until(() => backend.Notice is not null, "the notice");
+
+        Assert.Contains("Disable incoming traffic", backend.Notice!.Text);
+        Assert.False(backend.Notice.CanLocateSimConnect);
+        Assert.False(backend.IsConnected);
+    }
+
+    [Fact]
+    public async Task Too_old_x_plane_says_which_version_is_needed()
+    {
+        _xplane.Api1Only = true;
+        using var backend = await StartBackendAsync();
+
+        await Wait.Until(() => backend.Notice is not null, "the notice");
+
+        Assert.Contains("12.1.4", backend.Notice!.Text);
+    }
+
+    [Fact]
+    public async Task The_notice_goes_away_once_the_problem_is_fixed()
+    {
+        _xplane.RefuseConnections = true;
+        using var backend = await StartBackendAsync();
+        await Wait.Until(() => backend.Notice is not null, "the notice");
+
+        _xplane.RefuseConnections = false;
+
+        await Wait.Until(() => backend.IsConnected, "the backend to connect", timeoutMs: 10_000);
+        Assert.Null(backend.Notice);
+    }
+
+    [Fact]
+    public async Task X_plane_not_running_is_not_a_problem()
+    {
+        using var backend = new XPlaneBackend(() => 1); // nothing listens there
+        backend.Start();
+        await Task.Delay(800);
+
+        Assert.Null(backend.Notice);
     }
 }

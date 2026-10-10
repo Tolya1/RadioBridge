@@ -166,3 +166,60 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Equal(RadioBridge.Core.Radio.BaroUnit.InchesOfMercury, settings.BaroUnit); // the rest is kept
     }
 }
+
+public class SimNoticeTests
+{
+    [Fact]
+    public void Router_shows_notices_only_while_no_real_simulator_is_connected()
+    {
+        var msfs = new FakeSim("MSFS");
+        var xplane = new FakeSim("X-Plane");
+        using var router = new SimRouter([msfs, xplane]);
+        int changes = 0;
+        router.Changed += () => changes++;
+
+        msfs.Warn(new SimNotice("MSFS is running, but no SimConnect library was found.", CanLocateSimConnect: true));
+        Assert.Equal(new SimNotice("MSFS is running, but no SimConnect library was found.", true), router.Notice);
+        Assert.True(changes > 0);
+
+        xplane.Warn(new SimNotice("X-Plane is too old."));
+        Assert.Equal(new SimNotice("MSFS is running, but no SimConnect library was found. X-Plane is too old.", true), router.Notice);
+
+        xplane.Connect(RadioState.Empty with { Squawk = 1200 });
+        Assert.Null(router.Notice); // a simulator is connected: nothing left to fix
+
+        xplane.Disconnect();
+        Assert.NotNull(router.Notice);
+
+        msfs.Warn(null);
+        Assert.Equal(new SimNotice("X-Plane is too old."), router.Notice);
+    }
+
+    [Fact]
+    public void Test_mode_does_not_hide_a_notice()
+    {
+        var msfs = new FakeSim("MSFS");
+        var test = new FakeSim("Test mode");
+        using var router = new SimRouter([msfs], test);
+
+        test.Connect(RadioState.Empty);
+        msfs.Warn(new SimNotice("MSFS can't be reached."));
+
+        Assert.Equal("Test mode", router.Name);
+        Assert.Equal("MSFS can't be reached.", router.Notice?.Text);
+    }
+
+    [Fact]
+    public void Panel_view_carries_the_notice()
+    {
+        using var settings = new TempSettings();
+        var sim = new FakeSim("MSFS");
+        var panel = new FakePanel();
+        using var controller = new PanelController(panel, sim, settings.Store, new FakeTimeProvider());
+        controller.Start();
+
+        sim.Warn(new SimNotice("MSFS is running, but no SimConnect library was found.", true));
+
+        Assert.Equal(new SimNotice("MSFS is running, but no SimConnect library was found.", true), controller.View.Notice);
+    }
+}

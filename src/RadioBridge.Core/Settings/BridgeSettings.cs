@@ -41,6 +41,12 @@ public sealed record BridgeSettings
 
     // Read at startup.
     public bool MsfsEnabled { get; init; } = true;
+
+    /// <summary>
+    /// A SimConnect library to use for MSFS (a file, or a folder holding it); null searches for one. Normally
+    /// not needed: RadioBridge finds the sim's own library. Picked with "Locate SimConnect.dll" in the window.
+    /// </summary>
+    public string? SimConnectPath { get; init; }
     public bool XPlaneEnabled { get; init; } = true;
     public int XPlanePort { get; init; } = 8086;
 }

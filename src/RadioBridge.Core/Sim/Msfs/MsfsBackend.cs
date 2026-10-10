@@ -66,17 +66,30 @@ public sealed class MsfsBackend : ISimBackend
     private const uint RequestRadios = 0;
 
     private readonly ILogger _log;
+    private readonly Func<string?> _configuredPath;
+    private readonly ILocatorEnvironment _environment;
     private readonly ConcurrentQueue<(Ev Event, uint Data)> _outbox = new();
     private readonly CancellationTokenSource _cts = new();
+    private readonly HashSet<string> _loggedProblems = new(StringComparer.OrdinalIgnoreCase);
     private Thread? _thread;
     private volatile bool _connected;
     private volatile RadioState _state = RadioState.Empty;
+    private SimNotice? _notice;
 
-    public MsfsBackend(ILogger<MsfsBackend>? log = null) => _log = log ?? NullLogger<MsfsBackend>.Instance;
+    /// <param name="configuredPath">The SimConnect library chosen in the settings, read on every attempt (null = automatic).</param>
+    /// <param name="environment">The machine to search; the real one unless a test supplies another.</param>
+    public MsfsBackend(Func<string?>? configuredPath = null, ILocatorEnvironment? environment = null, ILogger<MsfsBackend>? log = null)
+    {
+        _configuredPath = configuredPath ?? (() => null);
+        _environment = environment ?? new MachineEnvironment();
+        _log = log ?? NullLogger<MsfsBackend>.Instance;
+    }
 
     public string Name => "MSFS";
     public bool IsConnected => _connected;
     public RadioState State => _state;
+
+    public SimNotice? Notice => Volatile.Read(ref _notice);
 
     public event Action? Changed;
 
@@ -89,16 +102,69 @@ public sealed class MsfsBackend : ISimBackend
             _log.LogInformation("MSFS support is Windows-only; skipping SimConnect.");
             return;
         }
-        if (ResolvedPath is null)
-        {
-            _log.LogWarning("SimConnect.dll not found, so MSFS is disabled. Searched: {Paths}",
-                string.Join("; ", SimConnectLocator.Candidates()));
-            return;
-        }
 
-        _log.LogInformation("Using {Path}.", ResolvedPath);
+        // The thread starts even without a SimConnect library: it keeps looking, so starting RadioBridge
+        // before MSFS (or fixing the setting later) works without a restart.
         _thread = new Thread(Run) { IsBackground = true, Name = "SimConnect" };
         _thread.Start();
+    }
+
+    /// <summary>
+    /// Makes sure a SimConnect library is loaded: tries every library the locator finds, in order, until one
+    /// loads. Returns false (and sets <see cref="Notice"/> when it matters) if none does.
+    /// </summary>
+    private bool EnsureLibrary()
+    {
+        if (LoadedPath is not null)
+        {
+            SetNotice(null);
+            return true;
+        }
+
+        string? configured = _configuredPath();
+        var found = SimConnectLocator.FindAll(configured, _environment).ToList();
+        foreach (var candidate in found)
+        {
+            if (TryLoad(candidate.Path, out string? error))
+            {
+                _log.LogInformation("Using {Path} (from {Source}).", candidate.Path, candidate.Source);
+                SetNotice(null);
+                return true;
+            }
+            LogOnce($"load:{candidate.Path}", () => _log.LogWarning(
+                "{Path} (from {Source}) could not be loaded: {Error} It must be the 64-bit SimConnect library.", candidate.Path, candidate.Source, error));
+        }
+
+        // Nothing usable. That only matters once MSFS is there to connect to: lots of RadioBridge users fly
+        // X-Plane only, and a warning for them on every start would be noise.
+        if (found.Count > 0)
+        {
+            SetNotice(new SimNotice(
+                $"MSFS can't be reached: {Path.GetFileName(found[0].Path)} isn't a usable 64-bit SimConnect library.", CanLocateSimConnect: true));
+        }
+        else if (_environment.IsMsfsRunning)
+        {
+            SetNotice(new SimNotice("MSFS is running, but no SimConnect library was found.", CanLocateSimConnect: true));
+            LogOnce("missing", () => _log.LogWarning("MSFS is running but no SimConnect library was found. Searched: {Paths}",
+                string.Join("; ", SimConnectLocator.Candidates(configured, _environment).Select(c => c.Path))));
+        }
+        else
+        {
+            SetNotice(null);
+        }
+        return false;
+    }
+
+    private void LogOnce(string key, Action log)
+    {
+        if (_loggedProblems.Add(key))
+            log();
+    }
+
+    private void SetNotice(SimNotice? notice)
+    {
+        if (Interlocked.Exchange(ref _notice, notice) != notice)
+            Changed?.Invoke();
     }
 
     public void Send(SimCommand command)
@@ -138,6 +204,12 @@ public sealed class MsfsBackend : ISimBackend
         var ct = _cts.Token;
         while (!ct.IsCancellationRequested)
         {
+            if (!EnsureLibrary())
+            {
+                ct.WaitHandle.WaitOne(RetryDelay);
+                continue;
+            }
+
             IntPtr handle = IntPtr.Zero;
             try
             {
@@ -153,7 +225,10 @@ public sealed class MsfsBackend : ISimBackend
             }
             catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException)
             {
-                _log.LogError(ex, "SimConnect.dll at {Path} could not be used (it must be the 64-bit build). MSFS is disabled.", ResolvedPath);
+                // Loaded, but it isn't a SimConnect client library (a function is missing): stop here, because
+                // a native library can't be unloaded and swapped for another in this process.
+                _log.LogError(ex, "{Path} is not a usable SimConnect library. MSFS is disabled until RadioBridge restarts.", LoadedPath);
+                SetNotice(new SimNotice($"MSFS can't be reached: {Path.GetFileName(LoadedPath)} isn't a usable SimConnect library. Restart RadioBridge after choosing another.", CanLocateSimConnect: true));
                 return;
             }
             catch (Exception ex)

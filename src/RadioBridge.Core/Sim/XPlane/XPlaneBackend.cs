@@ -28,6 +28,7 @@ public sealed class XPlaneBackend : ISimBackend
     private volatile Session? _session;
     private volatile RadioState _state = RadioState.Empty;
     private int _requestId;
+    private SimNotice? _notice;
     private bool _warnedForbidden;
     private bool _warnedUnsupported;
 
@@ -42,9 +43,18 @@ public sealed class XPlaneBackend : ISimBackend
     public bool IsConnected => _session is not null;
     public RadioState State => _state;
 
+    /// <summary>Set only for problems that are certainly X-Plane's: a refusal, or a version that is too old.</summary>
+    public SimNotice? Notice => Volatile.Read(ref _notice);
+
     public event Action? Changed;
 
     public void Start() => _loop ??= Task.Run(() => RunAsync(_cts.Token));
+
+    private void SetNotice(SimNotice? notice)
+    {
+        if (Interlocked.Exchange(ref _notice, notice) != notice)
+            Changed?.Invoke();
+    }
 
     public void Send(SimCommand command)
     {
@@ -93,6 +103,7 @@ public sealed class XPlaneBackend : ISimBackend
                 if (!_warnedForbidden)
                     _log.LogWarning("X-Plane refused the Web API request. Turn off 'Disable incoming traffic' in X-Plane's Settings > Network.");
                 _warnedForbidden = true;
+                SetNotice(new SimNotice("X-Plane refuses RadioBridge's connection. In X-Plane's Settings › Network, switch off 'Disable incoming traffic'."));
             }
             catch (Exception ex) when (ex is HttpRequestException or WebSocketException or TaskCanceledException or IOException)
             {
@@ -120,7 +131,10 @@ public sealed class XPlaneBackend : ISimBackend
     {
         int port = _port();
         if (await FindLoopbackHostAsync(port, ct) is not { } host)
-            return RetryDelay; // X-Plane is not running
+        {
+            SetNotice(null); // X-Plane is not running, which is nothing to warn about
+            return RetryDelay;
+        }
 
         using var http = new HttpClient { BaseAddress = new Uri($"http://{host}:{port}/api/"), Timeout = TimeSpan.FromSeconds(3) };
         http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -133,6 +147,12 @@ public sealed class XPlaneBackend : ISimBackend
             else if (!_warnedUnsupported)
                 _log.LogWarning("Something other than X-Plane's Web API answers on port {Port}. If X-Plane uses another port, set it in RadioBridge's settings.", port);
             _warnedUnsupported = true;
+
+            // Only a certain X-Plane problem becomes a notice: another program on the port may simply be
+            // unrelated to the simulator, so that case stays a log line.
+            SetNotice(api == WebApi.OldXPlane
+                ? new SimNotice($"X-Plane {version} is too old for RadioBridge, which needs X-Plane 12.1.4 or newer.")
+                : null);
             return UnsupportedRetryDelay;
         }
 
@@ -156,6 +176,9 @@ public sealed class XPlaneBackend : ISimBackend
         using var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var sender = SendLoopAsync(session, sessionCts.Token);
         _session = session;
+        _warnedForbidden = false; // warn again should it ever be refused again
+        _warnedUnsupported = false;
+        Volatile.Write(ref _notice, null); // announced by the Changed below
         _log.LogInformation("Connected to X-Plane {Version} (Web API port {Port}).", version, port);
         Changed?.Invoke();
 

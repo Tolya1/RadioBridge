@@ -122,8 +122,23 @@ This backend uses X-Plane 12's built-in [Web API](https://developer.x-plane.com/
 ### MSFS (`MsfsBackend`, Windows only)
 
 This backend calls the native SimConnect C API directly through `LibraryImport`. The SDK's managed
-wrapper is a .NET Framework mixed-mode assembly that modern .NET cannot load. `SimConnectLocator`
-finds `SimConnect.dll` at run time, because Microsoft's DLL is not redistributed.
+wrapper is a .NET Framework mixed-mode assembly that modern .NET cannot load.
+
+Microsoft's SimConnect library is not redistributed, so `SimConnectLocator` finds one on the machine
+at run time. The best place is the sim's own install folder: MSFS 2024 carries the client library as
+`SimConnect_internal.dll` and MSFS 2020 as `SimConnect.dll` (both are 64-bit and export everything
+RadioBridge calls; this was checked against a live MSFS 2024). The search order is the setting, the
+`SIMCONNECT_DLL` variable, RadioBridge's own folder, the running MSFS process's folder, the Steam
+installs, and last the SDKs. `ILocatorEnvironment` abstracts the machine so the order is unit tested.
+
+The backend thread starts even when nothing is found and keeps looking, so starting RadioBridge
+before MSFS, or choosing a library later, needs no restart. It tries every library the locator
+returns until one loads; a native library can't be swapped once loaded, so after that a different
+choice applies on restart. A missing library only becomes a **notice** (`SimNotice`) once MSFS is
+running, because many users only fly X-Plane. Backends expose `Notice`, `SimRouter` combines them while no
+real simulator is connected, and the window shows them as a banner (with a *Locate SimConnect.dll…*
+button for this one). X-Plane reports a refusal ("Disable incoming traffic") and a too-old version
+the same way.
 
 One thread owns the connection. It polls `SimConnect_GetNextDispatch` and drains a queue of
 outgoing events, so no two SimConnect calls ever overlap. Values are requested every sim frame with
