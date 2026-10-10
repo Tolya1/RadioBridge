@@ -2,18 +2,22 @@ using RadioBridge.Core.Panel;
 
 namespace RadioBridge.Core.Radio;
 
+/// <summary>
+/// Conservative by default: a normal turn (detents 40 ms or more apart) is never accelerated, and
+/// even a fast flick only triples the step.
+/// </summary>
 public sealed record AccelerationSettings
 {
     public bool Enabled { get; init; } = true;
 
     /// <summary>Detents closer together than this count as a fast spin.</summary>
-    public int FastDetentMs { get; init; } = 35;
+    public int FastDetentMs { get; init; } = 20;
 
     /// <summary>Detents closer together than this count as a medium spin.</summary>
-    public int MediumDetentMs { get; init; } = 90;
+    public int MediumDetentMs { get; init; } = 40;
 
-    public int FastMultiplier { get; init; } = 8;
-    public int MediumMultiplier { get; init; } = 3;
+    public int FastMultiplier { get; init; } = 3;
+    public int MediumMultiplier { get; init; } = 2;
 }
 
 /// <summary>Turns detent timing into a step multiplier, so a quick spin covers a big range.</summary>

@@ -81,32 +81,32 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public bool AccelerationEnabled
     {
-        get => S.Acceleration.Enabled;
-        set => Update(s => s with { Acceleration = s.Acceleration with { Enabled = value } });
+        get => S.ComAcceleration.Enabled;
+        set => Update(s => s with { ComAcceleration = s.ComAcceleration with { Enabled = value } });
     }
 
     public decimal? FastDetentMs
     {
-        get => S.Acceleration.FastDetentMs;
-        set => Update(s => s with { Acceleration = s.Acceleration with { FastDetentMs = ToInt(value, 35) } });
+        get => S.ComAcceleration.FastDetentMs;
+        set => Update(s => s with { ComAcceleration = s.ComAcceleration with { FastDetentMs = ToInt(value, 20) } });
     }
 
     public decimal? FastMultiplier
     {
-        get => S.Acceleration.FastMultiplier;
-        set => Update(s => s with { Acceleration = s.Acceleration with { FastMultiplier = ToInt(value, 8) } });
+        get => S.ComAcceleration.FastMultiplier;
+        set => Update(s => s with { ComAcceleration = s.ComAcceleration with { FastMultiplier = ToInt(value, 3) } });
     }
 
     public decimal? MediumDetentMs
     {
-        get => S.Acceleration.MediumDetentMs;
-        set => Update(s => s with { Acceleration = s.Acceleration with { MediumDetentMs = ToInt(value, 90) } });
+        get => S.ComAcceleration.MediumDetentMs;
+        set => Update(s => s with { ComAcceleration = s.ComAcceleration with { MediumDetentMs = ToInt(value, 40) } });
     }
 
     public decimal? MediumMultiplier
     {
-        get => S.Acceleration.MediumMultiplier;
-        set => Update(s => s with { Acceleration = s.Acceleration with { MediumMultiplier = ToInt(value, 3) } });
+        get => S.ComAcceleration.MediumMultiplier;
+        set => Update(s => s with { ComAcceleration = s.ComAcceleration with { MediumMultiplier = ToInt(value, 2) } });
     }
 
     public decimal? LongPressMs

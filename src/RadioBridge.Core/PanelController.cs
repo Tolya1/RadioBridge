@@ -146,7 +146,10 @@ public sealed class PanelController : IDisposable
 
         var settings = _settings.Current;
         var state = Effective(_sim.State, _time.GetTimestamp());
-        int steps = turn.Direction * _accelerator.Multiplier(turn, settings.Acceleration);
+        // Only COM frequencies span enough steps to need acceleration; everything else moves one step
+        // per detent. The accelerator still sees every detent, so its timing stays current.
+        int multiplier = _accelerator.Multiplier(turn, settings.ComAcceleration);
+        int steps = turn.Direction * (selector is Selector.Com1 or Selector.Com2 ? multiplier : 1);
         bool outer = turn.Knob == Knob.Outer;
 
         switch (selector)

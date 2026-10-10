@@ -128,8 +128,9 @@ Some details:
 - In XPDR mode, a **lit decimal point at the end** of a display marks the value the knobs edit, e.g.
   `7000.` (squawk) or `1013.` (altimeter). **Holding ACT/STBY acts on that value:** it sets the VFR
   squawk (7000 or 1200, see the settings) or the altimeter's standard pressure.
-- **Fast spins accelerate.** Detents less than 90 ms apart count ×3, and less than 35 ms ×8. Both
-  limits can be changed in the settings.
+- **Fast spins accelerate on COM1 and COM2 only**, gently: detents less than 40 ms apart count ×2,
+  and less than 20 ms ×3, so a normal turn always moves one channel per detent. NAV, ADF, squawk and
+  altimeter always move exactly one step per detent. The limits can be changed in the settings.
 - When you change a frequency, the panel shows your new value right away and keeps it for under a
   second while the simulator catches up. After that the simulator's value always wins. So if a radio
   can't tune 8.33 kHz and snaps back, the panel shows that. **Hold ACT/STBY** to switch the inner knob
@@ -184,7 +185,7 @@ Settings are in the window and are saved immediately to `settings.json` in the d
 | `CompactComDisplay` | `true` | `23.405` style; `false` shows `123.40` |
 | `BaroUnit` | `Hectopascal` | Altimeter in `Hectopascal` or `InchesOfMercury` |
 | `VfrSquawk` | `7000` | Squawk set by holding ACT/STBY on XPDR: `7000` (Europe) or `1200` (US) |
-| `Acceleration` | on, 35 ms ×8, 90 ms ×3 | Knob acceleration thresholds and multipliers |
+| `ComAcceleration` | on, 20 ms ×3, 40 ms ×2 | COM1/COM2 knob acceleration thresholds and multipliers (nothing else accelerates) |
 | `LongPressMs` | `600` | How long ACT/STBY must be held for a long press |
 | `TestMode` | `false` | Built-in test radios while no simulator is connected |
 | `CloseToTray` | `false` | Closing the window keeps RadioBridge running in the tray |

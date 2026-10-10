@@ -136,3 +136,33 @@ public sealed class PanelActivityTests : IDisposable
         Assert.Equal(new RowActivity(0, -1, false, false), _controller.View.LowerActivity);
     }
 }
+
+public sealed class SettingsStoreTests : IDisposable
+{
+    private readonly string _dir = Path.Combine(Path.GetTempPath(), "RadioBridgeTests", Guid.NewGuid().ToString("N"));
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
+    }
+
+    [Fact]
+    public void Older_acceleration_values_give_way_to_the_gentler_com_defaults()
+    {
+        Directory.CreateDirectory(_dir);
+        string path = Path.Combine(_dir, "settings.json");
+        File.WriteAllText(path, """
+            {
+              "BaroUnit": "InchesOfMercury",
+              "Acceleration": { "Enabled": true, "FastDetentMs": 35, "MediumDetentMs": 90, "FastMultiplier": 8, "MediumMultiplier": 3 }
+            }
+            """);
+
+        var settings = new RadioBridge.Core.Settings.SettingsStore(path).Current;
+
+        Assert.Equal(new RadioBridge.Core.Radio.AccelerationSettings(), settings.ComAcceleration);
+        Assert.Equal((20, 3, 40, 2), (settings.ComAcceleration.FastDetentMs, settings.ComAcceleration.FastMultiplier,
+            settings.ComAcceleration.MediumDetentMs, settings.ComAcceleration.MediumMultiplier));
+        Assert.Equal(RadioBridge.Core.Radio.BaroUnit.InchesOfMercury, settings.BaroUnit); // the rest is kept
+    }
+}

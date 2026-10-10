@@ -103,14 +103,53 @@ public sealed class PanelControllerTests : IDisposable
     }
 
     [Fact]
-    public void Fast_spin_accelerates()
+    public void Fast_spin_accelerates_on_com()
     {
         _panel.Raise(new KnobTurned(PanelRow.Upper, Knob.Inner, 1));
         _time.Advance(TimeSpan.FromMilliseconds(10));
         _panel.Raise(new KnobTurned(PanelRow.Upper, Knob.Inner, 1));
 
-        // 121.505 + 8 channels (default fast multiplier) = two 25 kHz blocks further
-        Assert.Equal(new SetStandby(Tunable.Com1, 121_555), _sim.Sent[^1]);
+        // 121.505 + 3 channels (default fast multiplier) = 121.525 (121.520 isn't a channel)
+        Assert.Equal(new SetStandby(Tunable.Com1, 121_525), _sim.Sent[^1]);
+    }
+
+    [Fact]
+    public void Medium_spin_doubles_the_com_step()
+    {
+        _panel.Raise(new KnobTurned(PanelRow.Upper, Knob.Outer, 1));
+        _time.Advance(TimeSpan.FromMilliseconds(30));
+        _panel.Raise(new KnobTurned(PanelRow.Upper, Knob.Outer, 1));
+
+        Assert.Equal(new SetStandby(Tunable.Com1, 124_500), _sim.Sent[^1]); // 121.5 -> 122.5 -> 124.5
+    }
+
+    [Fact]
+    public void Normal_turning_is_never_accelerated()
+    {
+        _panel.Raise(new KnobTurned(PanelRow.Upper, Knob.Inner, 1));
+        _time.Advance(TimeSpan.FromMilliseconds(60));
+        _panel.Raise(new KnobTurned(PanelRow.Upper, Knob.Inner, 1));
+
+        Assert.Equal(new SetStandby(Tunable.Com1, 121_510), _sim.Sent[^1]);
+    }
+
+    [Fact]
+    public void Fast_spins_outside_com_move_one_step_per_detent()
+    {
+        // NAV1 on the lower row: 113.90 -> 113.95 -> wraps to 113.00, one 50 kHz step each.
+        _panel.Raise(new KnobTurned(PanelRow.Lower, Knob.Inner, 1));
+        _time.Advance(TimeSpan.FromMilliseconds(10));
+        _panel.Raise(new KnobTurned(PanelRow.Lower, Knob.Inner, 1));
+        Assert.Equal(new SetStandby(Tunable.Nav1, 113_000), _sim.Sent[^1]);
+
+        _panel.Raise(new SelectorMoved(PanelRow.Upper, Selector.Xpdr));
+        _time.Advance(TimeSpan.FromSeconds(1));
+        for (int i = 0; i < 3; i++)
+        {
+            _panel.Raise(new KnobTurned(PanelRow.Upper, Knob.Inner, 1));
+            _time.Advance(TimeSpan.FromMilliseconds(10));
+        }
+        Assert.Equal(new SetSquawk(7003), _sim.Sent[^1]);
     }
 
     [Fact]

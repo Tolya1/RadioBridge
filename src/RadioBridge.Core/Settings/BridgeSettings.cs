@@ -16,7 +16,11 @@ public sealed record BridgeSettings
 
     public BaroUnit BaroUnit { get; init; } = BaroUnit.Hectopascal;
 
-    public AccelerationSettings Acceleration { get; init; } = new();
+    /// <summary>
+    /// Knob acceleration on COM1/COM2 (other modes never accelerate). Named apart from the earlier,
+    /// much livelier "Acceleration" setting so that older settings files get the gentler defaults.
+    /// </summary>
+    public AccelerationSettings ComAcceleration { get; init; } = new();
 
     public int LongPressMs { get; init; } = 600;
 
