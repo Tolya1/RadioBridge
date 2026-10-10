@@ -23,8 +23,11 @@ public sealed record BridgeSettings
     /// <summary>Drive the panel with built-in test radios while no simulator is connected.</summary>
     public bool TestMode { get; init; }
 
-    /// <summary>Closing the window keeps RadioBridge running in the tray. Off on Linux, where a tray isn't guaranteed.</summary>
-    public bool CloseToTray { get; init; } = !OperatingSystem.IsLinux();
+    /// <summary>
+    /// Closing the window keeps RadioBridge running in the tray. Off by default: Windows 11 hides new
+    /// tray icons in the overflow, so a window closed to the tray looks like a vanished app.
+    /// </summary>
+    public bool CloseToTray { get; init; }
 
     /// <summary>Start hidden in the tray (with <see cref="CloseToTray"/>) or minimized.</summary>
     public bool StartInTray { get; init; }

@@ -28,6 +28,9 @@ internal static partial class Program
     public static BridgeOptions Options { get; private set; } = new();
     public static bool StartMinimized { get; private set; }
 
+    /// <summary>This is the main instance, so later launches should be routed to its window.</summary>
+    public static bool OwnsInstance { get; private set; }
+
     // Don't use Avalonia, third-party APIs or SynchronizationContext-reliant code before AppMain is
     // called: things aren't initialized yet.
     [STAThread]
@@ -58,9 +61,15 @@ internal static partial class Program
         using var instance = new Mutex(initiallyOwned: true, "RadioBridge.SingleInstance", out bool first);
         if (!first && Options.UsePhysicalPanel)
         {
+            if (mode == Mode.Window && SingleInstance.AskRunningToShow())
+            {
+                Console.WriteLine("RadioBridge is already running; its window was brought to the front.");
+                return 0;
+            }
             Console.Error.WriteLine("RadioBridge is already running.");
             return 1;
         }
+        OwnsInstance = first;
 
         return mode switch
         {

@@ -16,6 +16,7 @@ public partial class App : Application
     private MainWindow? _window;
     private TrayIcon? _tray;
     private SettingsStore? _settings;
+    private readonly CancellationTokenSource _stop = new();
     private bool _quitting;
 
     public override void Initialize()
@@ -40,6 +41,7 @@ public partial class App : Application
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             desktop.Exit += (_, _) =>
             {
+                _stop.Cancel();
                 host.Dispose();
                 loggers.Dispose();
             };
@@ -66,6 +68,8 @@ public partial class App : Application
             }
 
             host.Start();
+            if (Program.OwnsInstance)
+                SingleInstance.Listen(() => Dispatcher.UIThread.Post(ShowWindow), _stop.Token);
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -110,6 +114,9 @@ public partial class App : Application
         if (_window.WindowState == WindowState.Minimized)
             _window.WindowState = WindowState.Normal;
         _window.Activate();
+        // Windows may refuse to let a background app take focus; a topmost blink still raises the window.
+        _window.Topmost = true;
+        _window.Topmost = false;
     }
 
     private void OnWindowClosing(object? sender, WindowClosingEventArgs e)

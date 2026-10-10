@@ -160,9 +160,13 @@ and prints every knob, selector and button event for 20 seconds.
 - **Status** at the top: whether the panel is connected, and which simulator (or test mode) is driving it.
 - **Settings**, folded away below.
 
-Closing the window keeps RadioBridge running in the **tray** (on Windows and macOS by default; on
-Linux, where not every desktop has a tray, it's opt-in). Click the tray icon to bring the window
-back. Its menu also has **Test mode** and **Quit**.
+Closing the window quits RadioBridge. To keep it running in the background, turn on **Settings ›
+Window › Keep running in the tray**. Then closing the window hides it to the tray: click the tray
+icon to bring it back, and use its menu for **Test mode** and **Quit**. Windows 11 puts new tray icons
+in the hidden-icons overflow (`^`), so drag the icon onto the taskbar to keep it in sight.
+
+Launching RadioBridge while it is already running brings the running window to the front, even when
+it is hidden in the tray.
 
 ## Settings
 
@@ -181,7 +185,7 @@ Settings are in the window and are saved immediately to `settings.json` in the d
 | `Acceleration` | on, 35 ms ×8, 90 ms ×3 | Knob acceleration thresholds and multipliers |
 | `LongPressMs` | `600` | How long ACT/STBY must be held for a long press |
 | `TestMode` | `false` | Built-in test radios while no simulator is connected |
-| `CloseToTray` | `true` (`false` on Linux) | Closing the window keeps RadioBridge running in the tray |
+| `CloseToTray` | `false` | Closing the window keeps RadioBridge running in the tray |
 | `StartInTray` | `false` | Start hidden in the tray (minimized if `CloseToTray` is off) |
 | `MsfsEnabled`, `XPlaneEnabled` | `true` | Which simulators to look for (applied on restart) |
 | `XPlanePort` | `8086` | X-Plane Web API port (applied on reconnect) |
@@ -210,6 +214,8 @@ were started from.
 | The window's knobs react but the sim doesn't change | The status shows whether a simulator (or test mode) is connected. Check the selector position: DME is read-only. |
 | Displays flicker or the knobs do two things | Another program drives the radio panel too. See [Other panel software](#2-other-panel-software). |
 | Displays stay blank | No simulator is connected (turn on test mode to try the panel), or on macOS move a selector once. |
+| The window is gone but RadioBridge still runs | The tray option is on and the window was closed. Launch RadioBridge again to bring it back, or use the tray icon (look in the hidden icons, `^`). |
+| Building fails with "file is locked by RadioBridge" | A running RadioBridge locks its own build output. Quit it first (see the row above if its window is hidden). |
 | *No simulator* with X-Plane running | X-Plane 12.1.4+? **Disable incoming traffic** off? Same port? The log says exactly why it can't connect. |
 | *No simulator* with MSFS running | Was SimConnect.dll found? The log names the DLL it uses or lists where it searched. It must be the 64-bit DLL. |
 | COM steps snap back to the previous value | That aircraft's radio only supports 25 kHz. Hold ACT/STBY on COM to switch to 25 kHz steps. |
