@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/RadioBridge.Core/RadioBridge.Core.csproj" />
+    <Project Path="src/RadioBridge.Desktop/RadioBridge.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RadioBridge.FakeXPlane/RadioBridge.FakeXPlane.csproj" />
+    <Project Path="tests/RadioBridge.FunctionalTests/RadioBridge.FunctionalTests.csproj" />
+    <Project Path="tests/RadioBridge.Tests/RadioBridge.Tests.csproj" />
+  </Folder>
+</Solution>

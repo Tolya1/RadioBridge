@@ -1,0 +1,5 @@
+# Lets the logged-in user open the Logitech/Saitek Pro Flight Radio Panel without root.
+# Install:  sudo cp 99-radiobridge.rules /etc/udev/rules.d/
+#           sudo udevadm control --reload-rules && sudo udevadm trigger
+# then unplug and replug the panel.
+KERNEL=="hidraw*", ATTRS{idVendor}=="06a3", ATTRS{idProduct}=="0d05", MODE="0660", TAG+="uaccess"

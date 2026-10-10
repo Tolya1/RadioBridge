@@ -1,0 +1,73 @@
+# Local CI and dev tasks. `mise run ci` runs everything CI would; `mise tasks` lists the rest.
+
+[tools]
+dotnet = "10"
+
+[env]
+DOTNET_NOLOGO = "1"
+DOTNET_CLI_TELEMETRY_OPTOUT = "1"
+
+[tasks.restore]
+description = "Restore NuGet packages"
+run = "dotnet restore RadioBridge.slnx"
+
+[tasks.build]
+description = "Build the app, tools and tests (Debug)"
+depends = ["restore"]
+run = "dotnet build RadioBridge.slnx --no-restore"
+
+[tasks.lint]
+description = "Check formatting and code style (fails on any change dotnet format would make)"
+depends = ["restore"]
+run = "dotnet format RadioBridge.slnx --verify-no-changes --no-restore"
+
+[tasks.format]
+description = "Fix formatting and code style"
+run = "dotnet format RadioBridge.slnx"
+
+[tasks.test]
+description = "Unit tests"
+depends = ["build"]
+run = "dotnet test tests/RadioBridge.Tests --no-build"
+
+[tasks.functional]
+description = "Functional tests: the real app driven through its automation API, against the X-Plane emulator"
+depends = ["build"]
+run = "dotnet test tests/RadioBridge.FunctionalTests --no-build"
+
+[tasks."functional:xplane"]
+description = "Functional tests against a running X-Plane 12 with a flight loaded (changes the aircraft's radios)"
+depends = ["build"]
+env = { RADIOBRIDGE_FT_SIM = "xplane" }
+run = "dotnet test tests/RadioBridge.FunctionalTests --no-build"
+
+[tasks."functional:msfs"]
+description = "Functional tests against a running MSFS with a flight loaded (Windows; changes the aircraft's radios)"
+depends = ["build"]
+env = { RADIOBRIDGE_FT_SIM = "msfs" }
+run = "dotnet test tests/RadioBridge.FunctionalTests --no-build"
+
+[tasks.ci]
+description = "Everything CI would run: lint, build, unit tests, functional tests against the emulator"
+run = [
+  { task = "lint" },
+  { task = "test" },
+  { task = "functional" },
+]
+
+[tasks.run]
+description = "Run RadioBridge"
+run = "dotnet run --project src/RadioBridge.Desktop"
+
+[tasks.emulator]
+description = "Run the X-Plane emulator on port 8086, to try the app without X-Plane"
+run = "dotnet run --project tests/RadioBridge.FakeXPlane -- --port 8086"
+
+[tasks.publish]
+description = "Self-contained Release builds for Windows, Linux and macOS into ./publish"
+run = [
+  "dotnet publish src/RadioBridge.Desktop -c Release -r win-x64 --self-contained -o publish/win-x64",
+  "dotnet publish src/RadioBridge.Desktop -c Release -r linux-x64 --self-contained -o publish/linux-x64",
+  "dotnet publish src/RadioBridge.Desktop -c Release -r osx-arm64 --self-contained -o publish/osx-arm64",
+  "dotnet publish src/RadioBridge.Desktop -c Release -r osx-x64 --self-contained -o publish/osx-x64",
+]

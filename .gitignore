@@ -1,0 +1,14 @@
+bin/
+obj/
+publish/
+TestResults/
+*.user
+*.suo
+.vs/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Microsoft's SimConnect.dll is never committed; see libs/README.md.
+libs/*.dll

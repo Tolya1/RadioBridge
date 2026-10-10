@@ -1,0 +1,144 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:RadioBridge.Desktop"
+        x:Class="RadioBridge.Desktop.MainWindow"
+        x:DataType="local:MainViewModel"
+        Title="RadioBridge"
+        Width="640" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterScreen"
+        RequestedThemeVariant="Dark"
+        Background="#16181c">
+
+    <Window.Styles>
+        <Style Selector="Border.panel">
+            <Setter Property="Background" Value="#0d0e10" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="18,14" />
+            <Setter Property="BorderBrush" Value="#2a2d33" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Border.segment">
+            <Setter Property="Background" Value="#050505" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderBrush" Value="#30333a" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="Width" Value="170" />
+        </Style>
+        <Style Selector="TextBlock.segment">
+            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, DejaVu Sans Mono, Menlo, monospace" />
+            <Setter Property="FontSize" Value="34" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="#ff4b2b" />
+            <Setter Property="TextAlignment" Value="Right" />
+            <Setter Property="MinHeight" Value="44" />
+        </Style>
+        <Style Selector="TextBlock.mode">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#c9ccd2" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Width" Value="64" />
+        </Style>
+        <Style Selector="TextBlock.caption">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="#7d828c" />
+        </Style>
+        <Style Selector="TextBlock.h2">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#c9ccd2" />
+            <Setter Property="Margin" Value="0,10,0,4" />
+        </Style>
+        <Style Selector="Ellipse.dot">
+            <Setter Property="Width" Value="9" />
+            <Setter Property="Height" Value="9" />
+            <Setter Property="Fill" Value="#5a5f69" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Ellipse.dot.on">
+            <Setter Property="Fill" Value="#3ccf6e" />
+        </Style>
+        <Style Selector="NumericUpDown">
+            <Setter Property="Width" Value="120" />
+            <Setter Property="FormatString" Value="0" />
+        </Style>
+    </Window.Styles>
+
+    <StackPanel Margin="16" Spacing="12">
+
+        <!-- status -->
+        <Grid ColumnDefinitions="*,Auto,Auto">
+            <TextBlock Text="RadioBridge" FontSize="18" FontWeight="SemiBold" Foreground="#e8eaee" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="0,0,18,0">
+                <Ellipse Classes="dot" Classes.on="{Binding PanelConnected}" />
+                <TextBlock Text="{Binding PanelStatus}" Foreground="#c9ccd2" VerticalAlignment="Center" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                <Ellipse Classes="dot" Classes.on="{Binding SimConnected}" />
+                <TextBlock Text="{Binding SimStatus}" Foreground="#c9ccd2" VerticalAlignment="Center" />
+            </StackPanel>
+        </Grid>
+
+        <!-- panel replica -->
+        <Border Classes="panel">
+            <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="64,170,170" ColumnSpacing="14">
+                    <TextBlock Grid.Column="1" Classes="caption" Text="ACTIVE" HorizontalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Classes="caption" Text="STANDBY" HorizontalAlignment="Center" />
+                </Grid>
+                <Grid ColumnDefinitions="64,Auto,Auto" ColumnSpacing="14">
+                    <TextBlock Classes="mode" Text="{Binding UpperMode}" />
+                    <Border Grid.Column="1" Classes="segment"><TextBlock Classes="segment" Text="{Binding UpperLeft}" /></Border>
+                    <Border Grid.Column="2" Classes="segment"><TextBlock Classes="segment" Text="{Binding UpperRight}" /></Border>
+                </Grid>
+                <Grid ColumnDefinitions="64,Auto,Auto" ColumnSpacing="14">
+                    <TextBlock Classes="mode" Text="{Binding LowerMode}" />
+                    <Border Grid.Column="1" Classes="segment"><TextBlock Classes="segment" Text="{Binding LowerLeft}" /></Border>
+                    <Border Grid.Column="2" Classes="segment"><TextBlock Classes="segment" Text="{Binding LowerRight}" /></Border>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- settings -->
+        <Border Classes="panel">
+            <StackPanel Spacing="4">
+                <TextBlock Classes="h2" Text="COM" Margin="0,0,0,4" />
+                <CheckBox IsChecked="{Binding Spacing833}" Content="8.33 kHz channels on the inner knob (long-press ACT/STBY on COM to toggle)" />
+                <CheckBox IsChecked="{Binding CompactCom}" Content="Compact display: 123.405 shows as 23.405" />
+
+                <TextBlock Classes="h2" Text="Transponder / altimeter" />
+                <CheckBox IsChecked="{Binding BaroInHg}" Content="Altimeter in inHg (otherwise hPa)" />
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="XPDR: outer knob = first two digits, inner = last two. Press ACT/STBY to edit the altimeter instead; hold it for standard pressure." />
+
+                <TextBlock Classes="h2" Text="Knob feel" />
+                <CheckBox IsChecked="{Binding AccelerationEnabled}" Content="Accelerate fast spins" />
+                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="6">
+                    <TextBlock Text="Fast below (ms)" VerticalAlignment="Center" />
+                    <NumericUpDown Grid.Column="1" Minimum="5" Maximum="500" Value="{Binding FastDetentMs}" />
+                    <TextBlock Grid.Column="2" Text="steps ×" VerticalAlignment="Center" />
+                    <NumericUpDown Grid.Column="3" Minimum="1" Maximum="50" Value="{Binding FastMultiplier}" />
+
+                    <TextBlock Grid.Row="1" Text="Medium below (ms)" VerticalAlignment="Center" />
+                    <NumericUpDown Grid.Row="1" Grid.Column="1" Minimum="5" Maximum="1000" Value="{Binding MediumDetentMs}" />
+                    <TextBlock Grid.Row="1" Grid.Column="2" Text="steps ×" VerticalAlignment="Center" />
+                    <NumericUpDown Grid.Row="1" Grid.Column="3" Minimum="1" Maximum="50" Value="{Binding MediumMultiplier}" />
+
+                    <TextBlock Grid.Row="2" Text="Long press (ms)" VerticalAlignment="Center" />
+                    <NumericUpDown Grid.Row="2" Grid.Column="1" Minimum="200" Maximum="3000" Increment="50" Value="{Binding LongPressMs}" />
+                </Grid>
+
+                <TextBlock Classes="h2" Text="Simulators (applied on restart)" />
+                <StackPanel Orientation="Horizontal" Spacing="16">
+                    <CheckBox IsChecked="{Binding MsfsEnabled}" Content="MSFS" />
+                    <CheckBox IsChecked="{Binding XPlaneEnabled}" Content="X-Plane, Web API port" />
+                    <NumericUpDown Minimum="1" Maximum="65535" Width="150" Value="{Binding XPlanePort}" />
+                </StackPanel>
+
+                <TextBlock Classes="caption" Margin="0,10,0,0" TextWrapping="Wrap" Text="{Binding SettingsPath, StringFormat='Settings: {0}'}" />
+                <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding LogPath, StringFormat='Logs: {0}'}" />
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</Window>
