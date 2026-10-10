@@ -69,11 +69,24 @@ run = "dotnet run --project src/RadioBridge.Desktop"
 description = "Run the X-Plane emulator on port 8086, to try the app without X-Plane"
 run = "dotnet run --project tests/RadioBridge.FakeXPlane -- --port 8086"
 
-[tasks.publish]
-description = "Self-contained Release builds for Windows, Linux and macOS into ./publish"
+[tasks.package]
+description = "Single-file, self-contained executables for Windows, Linux and macOS into ./dist"
 run = [
-  "dotnet publish src/RadioBridge.Desktop -c Release -r win-x64 --self-contained -o publish/win-x64",
-  "dotnet publish src/RadioBridge.Desktop -c Release -r linux-x64 --self-contained -o publish/linux-x64",
-  "dotnet publish src/RadioBridge.Desktop -c Release -r osx-arm64 --self-contained -o publish/osx-arm64",
-  "dotnet publish src/RadioBridge.Desktop -c Release -r osx-x64 --self-contained -o publish/osx-x64",
+  "dotnet publish src/RadioBridge.Desktop -c Release -r win-x64 -p:SingleFile=true -o dist/win-x64",
+  "dotnet publish src/RadioBridge.Desktop -c Release -r linux-x64 -p:SingleFile=true -o dist/linux-x64",
+  "dotnet publish src/RadioBridge.Desktop -c Release -r osx-arm64 -p:SingleFile=true -o dist/osx-arm64",
+  "dotnet publish src/RadioBridge.Desktop -c Release -r osx-x64 -p:SingleFile=true -o dist/osx-x64",
 ]
+
+[tasks."package:windows"]
+description = "Windows release zip (RadioBridge-<version>-win-x64.zip in ./dist) from a clean checkout"
+run = "powershell -NoProfile -ExecutionPolicy Bypass -File packaging/windows/make-release-zip.ps1"
+
+[tasks."functional:package"]
+description = "Package for this machine, then run the functional tests against that single file"
+run = [
+  "dotnet publish src/RadioBridge.Desktop -c Release --use-current-runtime -p:SingleFile=true -o dist/current",
+  "dotnet build tests/RadioBridge.FunctionalTests",
+  "dotnet test tests/RadioBridge.FunctionalTests --no-build",
+]
+env = { RADIOBRIDGE_APP = "dist/current" }

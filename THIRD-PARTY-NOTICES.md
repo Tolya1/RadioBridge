@@ -9,6 +9,8 @@ self-contained builds include them. Each is distributed under its own license.
 | Avalonia | MIT | https://github.com/AvaloniaUI/Avalonia |
 | Inter font (via Avalonia.Fonts.Inter) | SIL Open Font License 1.1 | https://github.com/rsms/inter |
 | SkiaSharp, HarfBuzzSharp (Avalonia rendering) | MIT | https://github.com/mono/SkiaSharp |
+| Skia, HarfBuzz (native libraries inside SkiaSharp) | BSD-3-Clause, MIT | https://skia.org, https://github.com/harfbuzz/harfbuzz |
+| ANGLE (`av_libglesv2.dll`, Windows graphics backend) | BSD-3-Clause | https://chromium.googlesource.com/angle/angle |
 | HidSharp | Apache-2.0 | https://www.zer7.com/software/hidsharp |
 | Serilog, Serilog.Extensions.Logging, Serilog.Sinks.File, Serilog.Sinks.Console | Apache-2.0 | https://github.com/serilog/serilog |
 

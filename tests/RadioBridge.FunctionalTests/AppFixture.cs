@@ -104,17 +104,18 @@ public sealed class AppFixture : IAsyncLifetime
 
     private void StartApp(int automationPort)
     {
-        string dll = FindAppDll();
         // Headless by default: a visible window can be closed by someone at the desk, which quits the app
         // mid-run. RADIOBRIDGE_FT_UI=window runs the same suite with the (minimized) window.
         bool headless = Environment.GetEnvironmentVariable("RADIOBRIDGE_FT_UI") != "window" || !OperatingSystem.IsWindows();
-        var start = new ProcessStartInfo("dotnet")
-        {
-            ArgumentList = { dll, "--no-panel", "--automation", automationPort.ToString(), "--data-dir", RunDirectory, headless ? "--headless" : "--minimized" },
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
+        var start = FindPackagedApp() is { } packaged
+            ? new ProcessStartInfo(packaged)
+            : new ProcessStartInfo("dotnet") { ArgumentList = { FindAppDll() } };
+        foreach (var arg in new[] { "--no-panel", "--automation", automationPort.ToString(), "--data-dir", RunDirectory, headless ? "--headless" : "--minimized" })
+            start.ArgumentList.Add(arg);
+        start.RedirectStandardOutput = true;
+        start.RedirectStandardError = true;
+        start.UseShellExecute = false;
+        AppPath = start.FileName == "dotnet" ? start.ArgumentList[0] : start.FileName;
         _app = Process.Start(start) ?? throw new InvalidOperationException("Could not start the app.");
         _app.OutputDataReceived += (_, e) => { lock (_output) _output.AppendLine(e.Data); };
         _app.ErrorDataReceived += (_, e) => { lock (_output) _output.AppendLine(e.Data); };
@@ -130,22 +131,42 @@ public sealed class AppFixture : IAsyncLifetime
             if (_app is { HasExited: true })
                 throw new InvalidOperationException($"The app exited with code {_app.ExitCode} while waiting for {what}.\n{_output}");
             if (DateTime.UtcNow > deadline)
-                throw new TimeoutException($"Timed out waiting for {what}. App output and logs: {RunDirectory}\n{_output}");
+                throw new TimeoutException($"Timed out waiting for {what} from {AppPath}. App output and logs: {RunDirectory}\n{_output}");
             await Task.Delay(200);
         }
+    }
+
+    /// <summary>The executable or DLL under test, for diagnostics.</summary>
+    public string AppPath { get; private set; } = "";
+
+    /// <summary>
+    /// A packaged single-file app named by RADIOBRIDGE_APP (the file, or a folder containing it;
+    /// relative paths are taken from the repository root), or null to test the regular build.
+    /// </summary>
+    private static string? FindPackagedApp()
+    {
+        if (Environment.GetEnvironmentVariable("RADIOBRIDGE_APP") is not { Length: > 0 } setting)
+            return null;
+        string path = Path.IsPathRooted(setting) ? setting : Path.Combine(RepositoryRoot(), setting);
+        if (Directory.Exists(path))
+            path = Path.Combine(path, OperatingSystem.IsWindows() ? "RadioBridge.exe" : "RadioBridge");
+        return File.Exists(path) ? path : throw new FileNotFoundException("RADIOBRIDGE_APP doesn't point at a packaged RadioBridge (mise run functional:package).", path);
     }
 
     /// <summary>The app built from this checkout, in the same configuration as the tests.</summary>
     private static string FindAppDll()
     {
+        string configuration = AppContext.BaseDirectory.Contains($"{Path.DirectorySeparatorChar}Release{Path.DirectorySeparatorChar}") ? "Release" : "Debug";
+        string dll = Path.Combine(RepositoryRoot(), "src", "RadioBridge.Desktop", "bin", configuration, "net10.0", "RadioBridge.dll");
+        return File.Exists(dll) ? dll : throw new FileNotFoundException("Build the app first (mise run build).", dll);
+    }
+
+    private static string RepositoryRoot()
+    {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        string configuration = dir.FullName.Contains($"{Path.DirectorySeparatorChar}Release{Path.DirectorySeparatorChar}") ? "Release" : "Debug";
         while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "RadioBridge.slnx")))
             dir = dir.Parent;
-        if (dir is null)
-            throw new InvalidOperationException("Could not find the repository root (RadioBridge.slnx).");
-        string dll = Path.Combine(dir.FullName, "src", "RadioBridge.Desktop", "bin", configuration, "net10.0", "RadioBridge.dll");
-        return File.Exists(dll) ? dll : throw new FileNotFoundException("Build the app first (mise run build).", dll);
+        return dir?.FullName ?? throw new InvalidOperationException("Could not find the repository root (RadioBridge.slnx).");
     }
 
     private static int FreePort()

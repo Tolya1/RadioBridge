@@ -45,8 +45,16 @@ because RadioBridge talks to it over a local WebSocket.
 
 ### 1. Get RadioBridge
 
-There are no prebuilt releases yet. Build from source with the [.NET 10 SDK](https://dotnet.microsoft.com/download)
-(or let [mise](https://mise.jdx.dev) install it):
+**Windows:** download `RadioBridge-<version>-win-x64.zip` from the
+[latest release](https://github.com/Tolya1/RadioBridge/releases/latest), unzip it anywhere and run
+`RadioBridge.exe`. It is a single file with everything inside, so there is nothing to install. The
+executable isn't code-signed yet, so Windows SmartScreen asks once: choose **More info › Run anyway**.
+The first start takes a moment longer while it unpacks its graphics libraries.
+
+**Linux and macOS:** there are no downloads yet; build the single file yourself (below).
+
+**From source** with the [.NET 10 SDK](https://dotnet.microsoft.com/download) (or let
+[mise](https://mise.jdx.dev) install it):
 
 ```bash
 git clone https://github.com/Tolya1/RadioBridge.git
@@ -54,8 +62,9 @@ cd RadioBridge
 mise run run
 ```
 
-Without mise, run `dotnet run --project src/RadioBridge.Desktop`. To build self-contained apps for
-every platform into `./publish`, run `mise run publish`.
+Without mise, run `dotnet run --project src/RadioBridge.Desktop`. `mise run package` builds the
+single-file executables for Windows, Linux and macOS into `./dist` (see
+[docs/packaging.md](docs/packaging.md)).
 
 ### 2. Other panel software
 
@@ -106,8 +115,9 @@ Building on Linux with the .NET SDK needs the ICU library (`libicu`, preinstalle
 distributions). The app itself doesn't, so where ICU is missing, build with
 `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` set.
 
-**macOS:** builds are not signed yet. After copying the app, clear the quarantine flag once, e.g.
-`xattr -dr com.apple.quarantine publish/osx-arm64`.
+**macOS:** builds are not signed. After building, sign the file ad hoc (Apple Silicon only runs signed
+code) and clear the quarantine flag once if it was downloaded, e.g.
+`codesign --sign - dist/osx-arm64/RadioBridge` and `xattr -dr com.apple.quarantine dist/osx-arm64`.
 
 ## Using the panel
 
@@ -254,10 +264,12 @@ All checks run locally with [mise](https://mise.jdx.dev). There is no hosted CI 
 | `mise run functional:msfs` | The same scenarios against a running MSFS with a flight loaded |
 | `mise run test:hardware` | On a connected panel: shared access both ways, startup state (blanks the displays briefly) |
 | `mise run emulator` | X-Plane emulator on port 8086, to try the app without X-Plane |
-| `mise run publish` | Self-contained builds for win-x64, linux-x64, osx-arm64 and osx-x64 |
+| `mise run package` | Single-file executables for win-x64, linux-x64, osx-arm64 and osx-x64 in `./dist` |
+| `mise run package:windows` | The Windows release zip, built from a clean checkout |
+| `mise run functional:package` | Package for this machine, then run the functional tests against that single file |
 
-More in [docs/architecture.md](docs/architecture.md), [docs/testing.md](docs/testing.md) and
-[docs/radio-panel-protocol.md](docs/radio-panel-protocol.md).
+More in [docs/architecture.md](docs/architecture.md), [docs/testing.md](docs/testing.md),
+[docs/packaging.md](docs/packaging.md) and [docs/radio-panel-protocol.md](docs/radio-panel-protocol.md).
 
 ## License
 

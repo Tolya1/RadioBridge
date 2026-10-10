@@ -11,6 +11,26 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <!-- `dotnet publish -c Release -r <rid> -p:SingleFile=true`: one self-contained executable with the
+       .NET runtime inside, compressed. Avalonia's native libraries (Skia, HarfBuzz, ANGLE) ride along
+       in the file and are unpacked to a cache folder on first start. -->
+  <PropertyGroup Condition="'$(SingleFile)' == 'true'">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <!-- Symbols of referenced projects and native packages (Skia ships 100 MB of .pdb) still land next
+       to the executable; a single-file package is just the executable. -->
+  <Target Name="RemoveSymbolsFromSingleFilePackage" AfterTargets="Publish" Condition="'$(SingleFile)' == 'true'">
+    <ItemGroup>
+      <_PublishedSymbols Include="$(PublishDir)*.pdb" />
+    </ItemGroup>
+    <Delete Files="@(_PublishedSymbols)" />
+  </Target>
+
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
@@ -35,8 +55,9 @@
   </ItemGroup>
 
   <!-- SimConnect.dll is Microsoft's and is not committed. For local builds, drop a 64-bit copy in
-       ../../libs and it is copied next to the app, the first place the app looks. -->
+       ../../libs and it is copied next to the app, the first place the app looks. Never published:
+       packages must not redistribute it. -->
   <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\libs\SimConnect.dll')">
-    <None Include="..\..\libs\SimConnect.dll" Link="SimConnect.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\libs\SimConnect.dll" Link="SimConnect.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
   </ItemGroup>
 </Project>

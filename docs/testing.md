@@ -47,6 +47,12 @@ three targets:
 The physical panel is never opened (`--no-panel`), so a connected panel and other panel software
 are left alone.
 
+By default the suite launches the build output. Set `RADIOBRIDGE_APP` to a packaged single-file
+executable (or the folder holding it) to test exactly what users get: `mise run functional:package`
+does that for this machine, and [packaging.md](packaging.md) says to do it on the unzipped release
+before publishing one. The log of each run records why the app quit (window closed, automation
+request, tray menu), which makes an unexpected exit easy to attribute.
+
 Each run keeps the app's settings, log and console output in its `runs/<timestamp>` folder. Look
 there first when a scenario fails. The failure message also includes the last displays and sim state.
 

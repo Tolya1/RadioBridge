@@ -16,6 +16,7 @@ public partial class App : Application
     private MainWindow? _window;
     private TrayIcon? _tray;
     private SettingsStore? _settings;
+    private ILogger? _log;
     private readonly CancellationTokenSource _stop = new();
     private bool _quitting;
 
@@ -31,10 +32,10 @@ public partial class App : Application
             _desktop = desktop;
             var options = Program.Options;
             var loggers = Program.CreateLoggers(options.LogDirectory, console: false);
-            var log = loggers.CreateLogger<App>();
+            var log = _log = loggers.CreateLogger<App>();
             log.LogInformation("RadioBridge {Version} starting on {OS}.", typeof(App).Assembly.GetName().Version, Environment.OSVersion);
 
-            var host = new BridgeHost(options, loggers, () => Dispatcher.UIThread.Post(Quit));
+            var host = new BridgeHost(options, loggers, () => Dispatcher.UIThread.Post(() => Quit("automation request")));
             var settings = _settings = host.Settings;
 
             // The app lives until Quit: closing the window may only hide it to the tray.
@@ -86,7 +87,7 @@ public partial class App : Application
         };
         testMode.Click += (_, _) => settings.Update(s => s with { TestMode = !s.TestMode });
         var quit = new NativeMenuItem("Quit");
-        quit.Click += (_, _) => Quit();
+        quit.Click += (_, _) => Quit("tray menu");
 
         var tray = new TrayIcon
         {
@@ -124,18 +125,19 @@ public partial class App : Application
         var closeToTray = _settings?.Current.CloseToTray == true;
         if (_quitting || !closeToTray)
         {
-            Quit();
+            Quit($"window closed ({e.CloseReason}{(e.IsProgrammatic ? ", programmatic" : "")})");
             return;
         }
         e.Cancel = true;
         _window!.Hide();
     }
 
-    private void Quit()
+    private void Quit(string reason)
     {
         if (_quitting)
             return;
         _quitting = true;
+        _log?.LogInformation("Quitting: {Reason}.", reason);
         _desktop?.Shutdown();
     }
 
