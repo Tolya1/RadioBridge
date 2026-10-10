@@ -68,6 +68,19 @@ internal sealed class TempSettings : IDisposable
     }
 }
 
+/// <summary>Keeps formatted log messages for assertions.</summary>
+internal sealed class ListLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
+{
+    public System.Collections.Concurrent.ConcurrentQueue<string> Messages { get; } = new();
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+    public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel level) => true;
+
+    public void Log<TState>(Microsoft.Extensions.Logging.LogLevel level, Microsoft.Extensions.Logging.EventId id, TState state,
+        Exception? exception, Func<TState, Exception?, string> formatter) => Messages.Enqueue(formatter(state, exception));
+}
+
 internal static class Wait
 {
     public static async Task Until(Func<bool> condition, string what, int timeoutMs = 5000)

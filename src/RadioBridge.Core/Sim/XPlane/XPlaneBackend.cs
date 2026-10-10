@@ -125,11 +125,13 @@ public sealed class XPlaneBackend : ISimBackend
         using var http = new HttpClient { BaseAddress = new Uri($"http://{host}:{port}/api/"), Timeout = TimeSpan.FromSeconds(3) };
         http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        var (supportsV2, version) = await GetCapabilitiesAsync(http, ct);
-        if (!supportsV2)
+        var (api, version) = await GetCapabilitiesAsync(http, ct);
+        if (api != WebApi.Ready)
         {
-            if (!_warnedUnsupported)
+            if (!_warnedUnsupported && api == WebApi.OldXPlane)
                 _log.LogWarning("X-Plane {Version} has no Web API v2; X-Plane 12.1.4 or newer is required.", version);
+            else if (!_warnedUnsupported)
+                _log.LogWarning("Something other than X-Plane's Web API answers on port {Port}. If X-Plane uses another port, set it in RadioBridge's settings.", port);
             _warnedUnsupported = true;
             return UnsupportedRetryDelay;
         }
@@ -200,22 +202,36 @@ public sealed class XPlaneBackend : ISimBackend
         return null;
     }
 
-    private static async Task<(bool SupportsV2, string Version)> GetCapabilitiesAsync(HttpClient http, CancellationToken ct)
+    private enum WebApi { Ready, OldXPlane, NotXPlane }
+
+    /// <summary>Tells X-Plane 12.1.4+ apart from older X-Plane and from other programs on the port.</summary>
+    private static async Task<(WebApi Api, string Version)> GetCapabilitiesAsync(HttpClient http, CancellationToken ct)
     {
         using var response = await http.GetAsync("capabilities", ct);
         if (response.StatusCode == HttpStatusCode.NotFound)
-            return (false, "12.1.1-12.1.3"); // the capabilities endpoint arrived together with v2
+        {
+            // The capabilities endpoint arrived with v2; X-Plane 12.1.1-12.1.3 only has the v1 API.
+            using var v1 = await http.GetAsync("v1/datarefs/count", ct);
+            return (v1.IsSuccessStatusCode ? WebApi.OldXPlane : WebApi.NotXPlane, "12.1.1-12.1.3");
+        }
         response.EnsureSuccessStatusCode();
 
-        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-        var root = doc.RootElement;
-        bool v2 = root.TryGetProperty("api", out var api)
-                  && api.TryGetProperty("versions", out var versions)
-                  && versions.EnumerateArray().Any(v => v.GetString() == "v2");
-        string version = root.TryGetProperty("x-plane", out var xp) && xp.TryGetProperty("version", out var ver)
-            ? ver.GetString() ?? "?"
-            : "?";
-        return (v2, version);
+        try
+        {
+            using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("x-plane", out var xp))
+                return (WebApi.NotXPlane, "?");
+            bool v2 = root.TryGetProperty("api", out var api)
+                      && api.TryGetProperty("versions", out var versions)
+                      && versions.EnumerateArray().Any(v => v.GetString() == "v2");
+            string version = xp.TryGetProperty("version", out var ver) ? ver.GetString() ?? "?" : "?";
+            return (v2 ? WebApi.Ready : WebApi.OldXPlane, version);
+        }
+        catch (JsonException)
+        {
+            return (WebApi.NotXPlane, "?");
+        }
     }
 
     private async Task<Dictionary<string, long>> LookupIdsAsync(HttpClient http, string path, IEnumerable<string> names, CancellationToken ct)

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using RadioBridge.Core.Sim;
 using RadioBridge.Core.Sim.XPlane;
 using RadioBridge.FakeXPlane;
@@ -119,5 +120,28 @@ public sealed class XPlaneBackendTests : IAsyncLifetime
 
         await _xplane.StartAsync();
         await Wait.Until(() => _backend.IsConnected && _backend.State.Squawk == 7000, "the backend to reconnect", timeoutMs: 10_000);
+    }
+}
+
+public class XPlaneDiagnosticsTests
+{
+    [Fact]
+    public async Task Another_program_on_the_port_is_not_mistaken_for_an_old_xplane()
+    {
+        // A web server that answers 404 to everything, like InfluxDB, whose default port is also 8086.
+        var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
+        Microsoft.AspNetCore.Hosting.HostingAbstractionsWebHostBuilderExtensions.UseUrls(builder.WebHost, "http://127.0.0.1:0");
+        await using var other = builder.Build();
+        await other.StartAsync();
+        int port = new Uri(other.Urls.First()).Port;
+
+        var log = new ListLogger<XPlaneBackend>();
+        using var backend = new XPlaneBackend(() => port, log);
+        backend.Start();
+
+        await Wait.Until(() => log.Messages.Any(m => m.Contains("Something other than X-Plane")), "the warning");
+        Assert.False(backend.IsConnected);
+        Assert.DoesNotContain(log.Messages, m => m.Contains("12.1.4 or newer"));
     }
 }
