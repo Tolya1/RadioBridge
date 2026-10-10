@@ -115,12 +115,15 @@
                 <CheckBox IsChecked="{Binding CompactCom}" Content="Compact display: 123.405 shows as 23.405" />
 
                 <TextBlock Classes="h2" Text="Transponder / altimeter" />
-                <CheckBox IsChecked="{Binding BaroInHg}" Content="Altimeter in inHg (otherwise hPa)" />
-                <StackPanel Orientation="Horizontal" Spacing="16">
-                    <TextBlock Text="VFR squawk (hold ACT/STBY)" VerticalAlignment="Center" />
-                    <RadioButton GroupName="Vfr" IsChecked="{Binding Vfr7000}" Content="7000 (Europe)" />
-                    <RadioButton GroupName="Vfr" IsChecked="{Binding Vfr1200}" Content="1200 (US)" />
-                </StackPanel>
+                <Grid ColumnDefinitions="Auto,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="16">
+                    <TextBlock Text="Altimeter unit" VerticalAlignment="Center" />
+                    <RadioButton Grid.Column="1" GroupName="Baro" IsChecked="{Binding BaroHpa}" Content="hPa" />
+                    <RadioButton Grid.Column="2" GroupName="Baro" IsChecked="{Binding BaroInHg}" Content="inHg" />
+
+                    <TextBlock Grid.Row="1" Text="VFR squawk (hold ACT/STBY)" VerticalAlignment="Center" />
+                    <RadioButton Grid.Row="1" Grid.Column="1" GroupName="Vfr" IsChecked="{Binding Vfr7000}" Content="7000 (Europe)" />
+                    <RadioButton Grid.Row="1" Grid.Column="2" GroupName="Vfr" IsChecked="{Binding Vfr1200}" Content="1200 (US)" />
+                </Grid>
                 <TextBlock Classes="caption" TextWrapping="Wrap"
                            Text="XPDR: squawk on the left (outer knob = first two digits, inner = last two), altimeter on the right. Press ACT/STBY to switch which one the knobs edit. Hold it to set the VFR squawk, or standard pressure when the altimeter is selected." />
 

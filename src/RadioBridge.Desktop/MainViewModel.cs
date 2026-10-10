@@ -66,10 +66,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
         set => Update(s => s with { CompactComDisplay = value });
     }
 
+    // Radio-button pairs: each one only sets its own value; the other button being cleared is a no-op.
+    public bool BaroHpa
+    {
+        get => S.BaroUnit == BaroUnit.Hectopascal;
+        set { if (value) Update(s => s with { BaroUnit = BaroUnit.Hectopascal }); }
+    }
+
     public bool BaroInHg
     {
         get => S.BaroUnit == BaroUnit.InchesOfMercury;
-        set => Update(s => s with { BaroUnit = value ? BaroUnit.InchesOfMercury : BaroUnit.Hectopascal });
+        set { if (value) Update(s => s with { BaroUnit = BaroUnit.InchesOfMercury }); }
     }
 
     public bool AccelerationEnabled
