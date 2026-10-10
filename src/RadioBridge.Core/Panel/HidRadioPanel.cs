@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using HidSharp;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -20,10 +21,31 @@ public interface IRadioPanel : IDisposable
 /// <summary>
 /// The physical panel over USB HID (HidSharp, so it runs on Windows, Linux and macOS). A background
 /// thread opens the first matching device, reads input reports and reconnects after unplugging.
+/// <para>
+/// The device is opened shared, so other panel software (e.g. SPAD.neXt or HangarControl driving
+/// other panels) can keep running. The displays are re-sent every few seconds, so whatever another
+/// program writes to this panel (e.g. a profile switch blanking all panels) is undone quickly.
+/// </para>
 /// </summary>
 public sealed class HidRadioPanel : IRadioPanel
 {
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan DisplayRefresh = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Never lock other programs out of the panel: no HidSharp exclusivity layer, and the OS handle is
+    /// shared for reading and writing. Other panel software may fight over the displays, but it can
+    /// always open the device.
+    /// </summary>
+    internal static readonly OpenConfiguration SharedAccess = CreateSharedAccess();
+
+    private static OpenConfiguration CreateSharedAccess()
+    {
+        var config = new OpenConfiguration();
+        config.SetOption(OpenOption.Exclusive, false);
+        config.SetOption(OpenOption.Interruptible, false);
+        return config;
+    }
 
     private readonly ILogger _log;
     private readonly RadioPanelDecoder _decoder = new();
@@ -35,6 +57,7 @@ public sealed class HidRadioPanel : IRadioPanel
     private int _featureLength;
     private byte[] _wanted = RadioPanelProtocol.EncodeDisplays(PanelDisplays.Blank);
     private byte[]? _written;
+    private long _writtenAt;
     private volatile bool _connected;
     private bool _loggedMissing;
 
@@ -78,7 +101,7 @@ public sealed class HidRadioPanel : IRadioPanel
                 continue;
             }
 
-            if (!device.TryOpen(out HidStream stream))
+            if (!device.TryOpen(SharedAccess, out HidStream stream))
             {
                 _log.LogWarning("Radio panel found but could not be opened ({Path}). On Linux, install the udev rule from packaging/linux.", device.DevicePath);
                 ct.WaitHandle.WaitOne(RetryDelay * 5);
@@ -102,7 +125,7 @@ public sealed class HidRadioPanel : IRadioPanel
                     SetConnected(true);
 
                     // The panel reports only on change: ask for the current selector positions.
-                    if (CurrentInputReport.TryRead(device) is { } current)
+                    if (CurrentInputReport.TryRead(device, stream) is { } current)
                     {
                         foreach (var ev in _decoder.Decode(current))
                             Input?.Invoke(ev);
@@ -135,6 +158,8 @@ public sealed class HidRadioPanel : IRadioPanel
         var buffer = new byte[Math.Max(maxInputLength, RadioPanelProtocol.InputReportLength + 1)];
         while (!ct.IsCancellationRequested)
         {
+            RefreshIfStale();
+
             int count;
             try
             {
@@ -157,6 +182,18 @@ public sealed class HidRadioPanel : IRadioPanel
         }
     }
 
+    /// <summary>Re-sends unchanged displays now and then, in case another program wrote to the panel.</summary>
+    private void RefreshIfStale()
+    {
+        lock (_writeGate)
+        {
+            if (Stopwatch.GetElapsedTime(_writtenAt) < DisplayRefresh)
+                return;
+            _written = null;
+            WriteLocked();
+        }
+    }
+
     private void WriteLocked()
     {
         if (_stream is null || (_written is not null && _written.AsSpan().SequenceEqual(_wanted)))
@@ -169,6 +206,7 @@ public sealed class HidRadioPanel : IRadioPanel
         {
             _stream.SetFeature(feature);
             _written = _wanted;
+            _writtenAt = Stopwatch.GetTimestamp();
         }
         catch (Exception ex)
         {

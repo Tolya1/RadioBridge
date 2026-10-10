@@ -30,6 +30,12 @@ description = "Unit tests"
 depends = ["build"]
 run = "dotnet test tests/RadioBridge.Tests --no-build"
 
+[tasks."test:hardware"]
+description = "Hardware checks on a connected radio panel: shared access, startup state (blanks its displays briefly)"
+depends = ["build"]
+env = { RADIOBRIDGE_HARDWARE = "1" }
+run = "dotnet test tests/RadioBridge.Tests --no-build --filter FullyQualifiedName~HardwareTests"
+
 [tasks.functional]
 description = "Functional tests: the real app driven through its automation API, against the X-Plane emulator"
 depends = ["build"]
