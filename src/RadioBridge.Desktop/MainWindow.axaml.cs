@@ -34,6 +34,20 @@ public partial class MainWindow : Window
             viewModel.SetSimConnectPath(null);
     }
 
+    private void OnToggleRecording(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel viewModel)
+            viewModel.ToggleRecording();
+    }
+
+    private async void OnOpenRecordings(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel viewModel)
+            return;
+        var folder = Directory.CreateDirectory(viewModel.RecordingDirectory);
+        await Launcher.LaunchDirectoryInfoAsync(folder);
+    }
+
     private ReaderWindow? _reader;
 
     private void OnOpenReadme(object? sender, RoutedEventArgs e) => OpenReader(DocumentKind.Readme);

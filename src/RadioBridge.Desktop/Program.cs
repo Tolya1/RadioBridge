@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using Avalonia;
 using Microsoft.Extensions.Logging;
 using RadioBridge.Core;
+using RadioBridge.Core.Diagnostics;
 using RadioBridge.Core.Docs;
 using RadioBridge.Core.Panel;
 using RadioBridge.Desktop.Reader;
@@ -19,6 +20,7 @@ internal static partial class Program
           --minimized          Start hidden in the tray (or minimized when the tray option is off).
           --no-panel           Do not open the USB panel.
           --test-mode          Drive the panel with built-in test radios while no simulator is connected.
+          --record             Start a debug recording right away (see "Reporting a problem" in the readme).
           --panel-test         Check the panel: show test patterns, then print knob and button events.
           --automation PORT    Enable the local automation API (testing only).
           --data-dir DIR       Folder for settings.json and logs.
@@ -109,9 +111,10 @@ internal static partial class Program
 
     private static int RunHeadless()
     {
-        using var loggers = CreateLoggers(Options.LogDirectory, console: true);
+        var recorder = new Recorder();
+        using var loggers = CreateLoggers(Options.LogDirectory, console: true, recorder);
         using var stop = new ManualResetEventSlim();
-        using (var host = new BridgeHost(Options, loggers, stop.Set))
+        using (var host = new BridgeHost(Options, loggers, stop.Set, recorder))
         {
             Console.CancelKeyPress += (_, e) =>
             {
@@ -164,7 +167,8 @@ internal static partial class Program
         return 0;
     }
 
-    public static ILoggerFactory CreateLoggers(string logDirectory, bool console)
+    /// <param name="recorder">Log lines are copied into its debug recordings.</param>
+    public static ILoggerFactory CreateLoggers(string logDirectory, bool console, Recorder? recorder = null)
     {
         var config = new LoggerConfiguration()
             .MinimumLevel.Debug()
@@ -176,7 +180,12 @@ internal static partial class Program
         if (console)
             config = config.WriteTo.Console(outputTemplate: "{Timestamp:HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}");
         var serilog = config.CreateLogger();
-        return LoggerFactory.Create(builder => builder.SetMinimumLevel(LogLevel.Debug).AddSerilog(serilog, dispose: true));
+        return LoggerFactory.Create(builder =>
+        {
+            builder.SetMinimumLevel(LogLevel.Debug).AddSerilog(serilog, dispose: true);
+            if (recorder is not null)
+                builder.AddProvider(new RecorderLoggerProvider(recorder));
+        });
     }
 
     private static (BridgeOptions Options, Mode Mode, bool Minimized) ParseArgs(string[] args)
@@ -196,6 +205,7 @@ internal static partial class Program
                 case "--minimized": minimized = true; break;
                 case "--no-panel": options = options with { UsePhysicalPanel = false }; break;
                 case "--test-mode": options = options with { TestMode = true }; break;
+                case "--record": options = options with { Record = true }; break;
                 case "--automation":
                     options = options with
                     {

@@ -23,7 +23,8 @@ flowchart LR
 ```
 
 `BridgeHost` wires these together from `BridgeOptions` (data folder, physical panel on/off,
-automation port, forced test mode). The window and `--headless` share it.
+automation port, forced test mode, recording at start). The window and `--headless` share it, and
+it hands the one `Recorder` (see [Debug recording](#debug-recording)) to every part.
 
 The desktop project adds the Avalonia window (`KnobView` and `XferView` draw the controls), the tray
 icon, the command line and `--panel-test`.
@@ -71,6 +72,11 @@ A pending value ends as soon as the simulator reports the same value, or when th
 From then on, the simulator's own value is shown again. That's how a radio that refuses a frequency
 (e.g. 8.33 kHz on a 25 kHz radio) ends up shown truthfully.
 
+A swap works the same way: ACT/STBY shows the swapped pair at once and holds it until the simulator
+reports it (or 800 ms pass). Some radios take a moment and swap in steps: REP's KX165 swaps when the
+press ends and writes the standby a frame before the active, so without the hold the display would
+show the old pair, then the same frequency twice, then the new pair.
+
 ## Simulators
 
 Every simulator implements `ISimBackend`:
@@ -106,7 +112,11 @@ This backend uses X-Plane 12's built-in [Web API](https://developer.x-plane.com/
 3. Dataref and command ids only live for one X-Plane session, so it looks them up by name over REST
    on every connection.
 4. It opens `ws://…/api/v2` and subscribes. X-Plane sends all values first, then only the changes.
-5. Writes are `dataref_set_values` messages. Swaps are `command_set_is_active` with `duration: 0`.
+5. Writes are `dataref_set_values` messages. Swaps are `command_set_is_active` with `duration: 0.15`:
+   a held press that X-Plane releases after 150 ms, like a click on the cockpit button. Add-on radios
+   may act only on the release of a command that was held for at least a frame, and ignore a press
+   that begins and ends in the same frame (`duration: 0`). REP's Bendix King KX165 in the SF-260 does
+   this (measured live: 20 ms presses never swapped, 50 ms did); stock radios and GTNs swap on the press.
 
 | Value | Dataref / command | Unit |
 |---|---|---|
@@ -115,15 +125,19 @@ This backend uses X-Plane 12's built-in [Web API](https://developer.x-plane.com/
 | ADF1/2 | `sim/cockpit2/radios/actuators/adf{n}_frequency_hz` | kHz |
 | DME1/2 | `sim/cockpit2/radios/indicators/nav{n}_dme_distance_nm` | NM |
 | Squawk | `sim/cockpit2/radios/actuators/transponder_code` | octal digits |
-| Altimeter, and standard pressure | `sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot` | inHg, two decimals |
-| Swap | `sim/radios/{com,nav}{n}_standy_flip` (Laminar's spelling) | command |
+| Altimeter, and standard pressure | `sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot` | inHg |
+| Swap | `sim/radios/{com,nav}{n}_standy_flip` (Laminar's spelling) | command, held 150 ms |
 
-**Altimeter values are written in hundredths of an inch.** X-Plane stores the setting in inHg, and a
-real altimeter moves in 0.01 steps, so a panel in hPa mode converts each whole hPa to the nearest
-hundredth (1040 hPa = 30.7105 → 30.71) rather than writing 30.711, which no altimeter can show. Every
-hPa from 900 to 1100 maps to its own value and reads back as the same hPa, so a step never stalls or
-skips (a unit test checks all 201). Standard pressure is the same write of 29.92. X-Plane's own
-`barometer_2992` command is not used: it leaves the internal 1013.25 hPa (29.92125 inHg).
+**Altimeter values are the exact setting plus a tiny margin.** X-Plane stores the setting in inHg as a
+32-bit float. A knob step in hPa writes that whole hPa exactly (1040 hPa = 30.7112 inHg, which is what
+X-Plane's own knob stores), and a step in inHg writes the two-decimal value (29.91). Some cockpits draw
+the setting by cutting digits off instead of rounding: the Thranda PC-6's altimeter shows
+floor(inHg × 33.864) in hPa and floor(inHg × 100) in inHg. A float can't hold 29.91 exactly (it becomes
+29.9099998, shown as 29.90), so every write adds 0.00005 inHg (0.002 hPa, invisible on any altimeter).
+Unit tests check that every hPa from 900 to 1100 and every inHg from 26.58 to 32.48 shows as itself under
+those formulas. (Rounding hPa settings to two inHg decimals, as 0.1.1 did, made 1013 hPa show as 1012
+there.) Standard pressure is a write of 29.92. X-Plane's own `barometer_2992` command is not used: it
+leaves the internal 1013.25 hPa (29.92125 inHg).
 
 ### MSFS (`MsfsBackend`, Windows only)
 
@@ -188,6 +202,31 @@ the window is the picture. Details that matter:
 `StartupReader` decides when the window opens by itself: until "Don't show again" is chosen
 (`ShowReaderAtStart`), not when started hidden, never in an automated run.
 
+## Debug recording
+
+`Recorder` (Core, `Diagnostics`) writes a JSON Lines file while a recording runs: one event per line with
+`ms`, `t`, `src` and `ev`, plus the event's own fields. Every part records what it alone knows:
+
+| `src` | Events | From |
+|---|---|---|
+| `panel` | `report` (raw input bytes; `current` for the state read at connection), `displays` (the display report when it changes), `input` (decoded), `connected` | `HidRadioPanel`, `PanelController` |
+| `controller` | `tune` (from, to, steps, acceleration), `swap`, `focus`, `hold`, `ignored` (and why), `unconfirmed` (a value the sim didn't take within the hold-off), `displays` (the four texts) | `PanelController` |
+| `sim` | `active`, `state` (the radios in RadioBridge's units), `notice` | `SimRouter` |
+| `xplane` | `connected` (version, dataref and command ids), `watching`, `values` (by dataref name), `set`, `command`, `result` (X-Plane's reply to each request) | `XPlaneBackend` |
+| `msfs` | `connected` (the library), `values` (SimVars by name), `event`, `exception`, `quit` | `MsfsBackend` |
+| `settings`, `log`, `recorder` | settings changes, every log line (debug and up, via `RecorderLoggerProvider`), start (version, OS, settings) and stop | `BridgeHost`, the logger |
+
+While recording, the X-Plane backend also subscribes to a **watch list** (`XPlaneWatchList`): the rest of
+X-Plane's radio, altimeter and avionics-power datarefs, the aircraft's identity, and every add-on dataref
+whose name looks radio-related (REP's KX165 knobs and swap buttons, circuit breakers, a GTN's units, a
+custom altimeter's unit switch). Continuously changing instrument outputs are left out. When another
+aircraft loads, the list is built again. On a live SF-260 it held 314 of X-Plane's 9406 datarefs.
+
+`Record` does nothing while no recording runs. Otherwise it formats the line on the calling thread
+and queues it; a background task writes the queue and flushes whenever it runs dry. The file is shared
+for reading, and a recording stops by itself at 200 MB. The window, the tray, `--record` and the automation
+API (`POST /api/recording`) start and stop it.
+
 ## Threads
 
 | Thread | Does |
@@ -196,6 +235,7 @@ the window is the picture. Details that matter:
 | X-Plane loop (task) | Connects, receives pushes, sends queued messages |
 | SimConnect thread | Owns the SimConnect handle |
 | Timer | 100 ms display refresh, long-press timers |
+| Recorder (task) | Writes queued recording events to the file |
 | UI thread | Avalonia; gets `PanelView` updates through `Dispatcher.UIThread.Post` |
 
 `PanelController` serializes all its work under one lock. Backends hand out immutable `RadioState`

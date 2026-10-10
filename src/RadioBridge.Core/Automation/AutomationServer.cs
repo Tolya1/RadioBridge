@@ -16,6 +16,7 @@ namespace RadioBridge.Core.Automation;
 /// <item><c>GET /api/state</c>: panel view, display text, the raw display report and the sim's own values.</item>
 /// <item><c>POST /api/panel/report</c> <c>{"bits": n}</c>: injects a 24-bit input report into the virtual panel.</item>
 /// <item><c>GET|PUT /api/settings</c>: reads or replaces the settings.</item>
+/// <item><c>POST /api/recording</c> <c>{"on": true|false}</c>: starts or stops the debug recording.</item>
 /// <item><c>POST /api/shutdown</c>: exits the app.</item>
 /// </list>
 /// </summary>
@@ -35,11 +36,12 @@ public sealed class AutomationServer : IDisposable
     private readonly SettingsStore _settings;
     private readonly Action _shutdown;
     private readonly ILogger _log;
+    private readonly BridgeHost? _host;
     private readonly HttpListener _listener = new();
     private Task? _loop;
 
     public AutomationServer(int port, PanelController controller, VirtualRadioPanel panel, ISimBackend sim,
-        SettingsStore settings, Action shutdown, ILogger<AutomationServer>? log = null)
+        SettingsStore settings, Action shutdown, ILogger<AutomationServer>? log = null, BridgeHost? host = null)
     {
         _port = port;
         _controller = controller;
@@ -48,6 +50,7 @@ public sealed class AutomationServer : IDisposable
         _settings = settings;
         _shutdown = shutdown;
         _log = log ?? NullLogger<AutomationServer>.Instance;
+        _host = host;
     }
 
     public void Start()
@@ -91,6 +94,7 @@ public sealed class AutomationServer : IDisposable
                 ("POST", "/api/panel/report") => Inject(await ReadAsync<ReportRequest>(request)),
                 ("GET", "/api/settings") => _settings.Current,
                 ("PUT", "/api/settings") => ReplaceSettings(await ReadAsync<BridgeSettings>(request)),
+                ("POST", "/api/recording") => SetRecording(await ReadAsync<RecordingRequest>(request)),
                 ("POST", "/api/shutdown") => Shutdown(),
                 _ => NotFound(response),
             };
@@ -126,7 +130,25 @@ public sealed class AutomationServer : IDisposable
             displayReport = Convert.ToHexString(_panel.DisplayReport),
             sim = new { connected = _sim.IsConnected, name = _sim.Name, state = _sim.State, notice = view.Notice },
             settings = _settings.Current,
+            recording = Recording(),
         };
+    }
+
+    private object? Recording() => _host is null
+        ? null
+        : new { active = _host.Recorder.IsRecording, path = _host.Recorder.FilePath, bytes = _host.Recorder.BytesWritten };
+
+    private object? SetRecording(RecordingRequest? body)
+    {
+        if (_host is null)
+            throw new InvalidDataException("Recording isn't available here.");
+        if (body?.On is not bool on)
+            throw new ArgumentException("Expected {\"on\": true|false}.");
+        if (on)
+            _host.StartRecording();
+        else
+            _host.StopRecording();
+        return Recording();
     }
 
     private object Inject(ReportRequest? body)
@@ -176,4 +198,6 @@ public sealed class AutomationServer : IDisposable
     }
 
     private sealed record ReportRequest(int? Bits);
+
+    private sealed record RecordingRequest(bool? On);
 }

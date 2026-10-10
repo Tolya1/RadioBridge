@@ -60,6 +60,9 @@
         <Style Selector="Ellipse.dot.on">
             <Setter Property="Fill" Value="#3ccf6e" />
         </Style>
+        <Style Selector="Ellipse.dot.recording">
+            <Setter Property="Fill" Value="#ff4b2b" />
+        </Style>
         <Style Selector="NumericUpDown">
             <Setter Property="Width" Value="120" />
             <Setter Property="FormatString" Value="0" />
@@ -183,6 +186,15 @@
             </StackPanel>
         </Border>
         </Expander>
+
+        <!-- debug recording, for bug reports -->
+        <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">
+            <Ellipse Classes="dot" Classes.recording="{Binding IsRecording}" />
+            <Button Grid.Column="1" Content="{Binding RecordButtonText}" Click="OnToggleRecording" MinWidth="140"
+                    ToolTip.Tip="Records the panel's input and displays, RadioBridge's decisions, and everything sent to and received from the simulator" />
+            <TextBlock Grid.Column="2" Classes="caption" Text="{Binding RecordingStatus}" TextWrapping="Wrap" VerticalAlignment="Center" />
+            <Button Grid.Column="3" Content="Open folder" Click="OnOpenRecordings" ToolTip.Tip="{Binding RecordingDirectory}" />
+        </Grid>
 
         <!-- the documents that are built into the executable -->
         <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="8">

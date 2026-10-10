@@ -2,6 +2,7 @@ using System.Diagnostics;
 using HidSharp;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using RadioBridge.Core.Diagnostics;
 
 namespace RadioBridge.Core.Panel;
 
@@ -48,6 +49,7 @@ public sealed class HidRadioPanel : IRadioPanel
     }
 
     private readonly ILogger _log;
+    private readonly Recorder _recorder;
     private readonly RadioPanelDecoder _decoder = new();
     private readonly object _writeGate = new();
     private readonly CancellationTokenSource _cts = new();
@@ -57,11 +59,16 @@ public sealed class HidRadioPanel : IRadioPanel
     private int _featureLength;
     private byte[] _wanted = RadioPanelProtocol.EncodeDisplays(PanelDisplays.Blank);
     private byte[]? _written;
+    private byte[]? _recorded;
     private long _writtenAt;
     private volatile bool _connected;
     private bool _loggedMissing;
 
-    public HidRadioPanel(ILogger<HidRadioPanel>? log = null) => _log = log ?? NullLogger<HidRadioPanel>.Instance;
+    public HidRadioPanel(ILogger<HidRadioPanel>? log = null, Recorder? recorder = null)
+    {
+        _log = log ?? NullLogger<HidRadioPanel>.Instance;
+        _recorder = recorder ?? new Recorder();
+    }
 
     public bool IsConnected => _connected;
 
@@ -127,6 +134,11 @@ public sealed class HidRadioPanel : IRadioPanel
                     // The panel reports only on change: ask for the current selector positions.
                     if (CurrentInputReport.TryRead(device, stream) is { } current)
                     {
+                        _recorder.Record("panel", "report", w =>
+                        {
+                            w.WriteString("bytes", Convert.ToHexString(current));
+                            w.WriteBoolean("current", true); // asked for at connection, not sent by the panel
+                        });
                         foreach (var ev in _decoder.Decode(current))
                             Input?.Invoke(ev);
                     }
@@ -177,6 +189,11 @@ public sealed class HidRadioPanel : IRadioPanel
 
             var report = buffer.AsSpan(offset, RadioPanelProtocol.InputReportLength);
             _log.LogTrace("Panel report {B0:X2} {B1:X2} {B2:X2}", report[0], report[1], report[2]);
+            if (_recorder.IsRecording)
+            {
+                string hex = Convert.ToHexString(report);
+                _recorder.Record("panel", "report", w => w.WriteString("bytes", hex));
+            }
             foreach (var ev in _decoder.Decode(report))
                 Input?.Invoke(ev);
         }
@@ -207,6 +224,13 @@ public sealed class HidRadioPanel : IRadioPanel
             _stream.SetFeature(feature);
             _written = _wanted;
             _writtenAt = Stopwatch.GetTimestamp();
+            // The periodic re-send of the same displays isn't news; a new picture is.
+            if (_recorder.IsRecording && (_recorded is null || !_recorded.AsSpan().SequenceEqual(_wanted)))
+            {
+                _recorded = _wanted;
+                string hex = Convert.ToHexString(_wanted);
+                _recorder.Record("panel", "displays", w => w.WriteString("bytes", hex));
+            }
         }
         catch (Exception ex)
         {
@@ -220,6 +244,7 @@ public sealed class HidRadioPanel : IRadioPanel
             return;
         _connected = connected;
         _log.LogInformation("Radio panel {State}.", connected ? "connected" : "disconnected");
+        _recorder.Record("panel", connected ? "connected" : "disconnected");
         ConnectionChanged?.Invoke(connected);
     }
 

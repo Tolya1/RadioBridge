@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using RadioBridge.Core.Diagnostics;
 using RadioBridge.Core.Panel;
 using RadioBridge.Core.Radio;
 using RadioBridge.Core.Settings;
@@ -33,10 +34,11 @@ public sealed record RowActivity(int InnerTurns, int OuterTurns, bool ButtonDown
 /// <summary>
 /// Decides what the panel does: maps knobs and buttons to sim commands and renders the displays.
 /// <para>
-/// Values the knobs change are shown immediately and kept for a short hold-off, so slightly older
-/// values still on their way back from the sim cannot make the display jump back or eat detents
-/// during a fast spin. Once the sim reports the same value, or the hold-off ends, the sim is
-/// authoritative again (so a radio that snaps a frequency is shown truthfully).
+/// Values the knobs change, and the frequencies an ACT/STBY press swaps, are shown immediately and kept
+/// for a short hold-off, so slightly older values still on their way back from the sim cannot make the
+/// display jump back or eat detents during a fast spin. Once the sim reports the same value, or the
+/// hold-off ends, the sim is authoritative again (so a radio that snaps a frequency, or doesn't swap, is
+/// shown truthfully).
 /// </para>
 /// </summary>
 public sealed class PanelController : IDisposable
@@ -58,6 +60,7 @@ public sealed class PanelController : IDisposable
     private readonly SettingsStore _settings;
     private readonly TimeProvider _time;
     private readonly ILogger _log;
+    private readonly Recorder _recorder;
     private readonly KnobAccelerator _accelerator;
     private readonly object _gate = new();
 
@@ -67,16 +70,20 @@ public sealed class PanelController : IDisposable
     private readonly bool[] _longPressFired = new bool[2];
     private readonly (string Left, string Right, long Until)?[] _flash = new (string, string, long)?[2];
     private readonly Dictionary<Field, (double Value, long Until)> _pending = new();
+    private readonly Dictionary<Tunable, (RadioPair Expected, long Until)> _swapped = new();
     private readonly RowActivity[] _activity = [RowActivity.None, RowActivity.None];
+    private PanelDisplays? _recordedDisplays;
     private ITimer? _refresh;
 
-    public PanelController(IRadioPanel panel, ISimBackend sim, SettingsStore settings, TimeProvider? time = null, ILogger<PanelController>? log = null)
+    public PanelController(IRadioPanel panel, ISimBackend sim, SettingsStore settings, TimeProvider? time = null,
+        ILogger<PanelController>? log = null, Recorder? recorder = null)
     {
         _panel = panel;
         _sim = sim;
         _settings = settings;
         _time = time ?? TimeProvider.System;
         _log = log ?? NullLogger<PanelController>.Instance;
+        _recorder = recorder ?? new Recorder();
         _accelerator = new KnobAccelerator(_time);
         View = new PanelView(false, false, "", null, null, PanelDisplays.Blank, RowActivity.None, RowActivity.None);
     }
@@ -105,6 +112,7 @@ public sealed class PanelController : IDisposable
 
     private void OnInput(PanelEvent input)
     {
+        RecordInput(input);
         try
         {
             lock (_gate)
@@ -141,10 +149,40 @@ public sealed class PanelController : IDisposable
         Render();
     }
 
+    private void RecordInput(PanelEvent input) => _recorder.Record("panel", "input", w =>
+    {
+        w.WriteString("row", input.Row.ToString());
+        switch (input)
+        {
+            case SelectorMoved m:
+                w.WriteString("selector", m.Position.ToString());
+                break;
+            case KnobTurned k:
+                w.WriteString("knob", k.Knob.ToString());
+                w.WriteNumber("direction", k.Direction);
+                break;
+            case ButtonChanged b:
+                w.WriteString("button", b.Pressed ? "down" : "up");
+                break;
+        }
+    });
+
+    /// <summary>Records something the controller decided, with the row's selector for context.</summary>
+    private void RecordAction(string action, PanelRow row, Action<System.Text.Json.Utf8JsonWriter>? fields = null) =>
+        _recorder.Record("controller", action, w =>
+        {
+            w.WriteString("row", row.ToString());
+            w.WriteString("selector", _selectors[(int)row]?.ToString());
+            fields?.Invoke(w);
+        });
+
     private void OnKnob(KnobTurned turn)
     {
         if (!_sim.IsConnected || _selectors[(int)turn.Row] is not Selector selector)
+        {
+            RecordAction("ignored", turn.Row, w => w.WriteString("why", _sim.IsConnected ? "no selector position yet" : "no simulator"));
             return;
+        }
 
         var settings = _settings.Current;
         var state = Effective(_sim.State, _time.GetTimestamp());
@@ -160,7 +198,10 @@ public sealed class PanelController : IDisposable
                 var radio = ToTunable(selector);
                 int khz = state.Get(radio).StandbyKhz;
                 if (khz <= 0)
+                {
+                    RecordAction("ignored", turn.Row, w => w.WriteString("why", "the simulator reports no standby frequency"));
                     return; // nothing to tune from yet
+                }
                 int next = (radio, outer) switch
                 {
                     (Tunable.Com1 or Tunable.Com2, true) => Frequencies.StepComMhz(khz, steps),
@@ -171,6 +212,7 @@ public sealed class PanelController : IDisposable
                 SetPending(FieldOf(radio), next);
                 _sim.Send(new SetStandby(radio, next));
                 _log.LogDebug("{Radio} standby {From} -> {To} ({Steps})", radio, khz, next, steps);
+                RecordTune(turn.Row, khz, next, steps, multiplier);
                 break;
 
             case Selector.Adf:
@@ -181,6 +223,7 @@ public sealed class PanelController : IDisposable
                 int nextAdf = Math.Clamp(adf + steps * (outer ? 10 : 1), AdfMinKhz, AdfMaxKhz);
                 SetPending(index == 1 ? Field.Adf1 : Field.Adf2, nextAdf);
                 _sim.Send(new SetAdf(index, nextAdf));
+                RecordTune(turn.Row, adf, nextAdf, steps, 1);
                 break;
 
             case Selector.Xpdr when _editBaro[(int)turn.Row]:
@@ -192,6 +235,7 @@ public sealed class PanelController : IDisposable
                 hpa = Math.Clamp(hpa, BaroMinHpa, BaroMaxHpa);
                 SetPending(Field.Baro, hpa);
                 _sim.Send(new SetBaro(hpa));
+                RecordTune(turn.Row, state.BaroHpa, hpa, steps, 1, settings.BaroUnit.ToString());
                 break;
 
             case Selector.Xpdr:
@@ -200,9 +244,22 @@ public sealed class PanelController : IDisposable
                 int code = outer ? Squawk.StepHighPair(state.Squawk, steps) : Squawk.StepLowPair(state.Squawk, steps);
                 SetPending(Field.Squawk, code);
                 _sim.Send(new SetSquawk(code));
+                RecordTune(turn.Row, state.Squawk, code, steps, 1);
                 break;
         }
     }
+
+    private void RecordTune(PanelRow row, double from, double to, int steps, int multiplier, string? unit = null) =>
+        RecordAction("tune", row, w =>
+        {
+            w.WriteNumberOrNull("from", from);
+            w.WriteNumber("to", to);
+            w.WriteNumber("steps", steps);
+            if (multiplier != 1)
+                w.WriteNumber("acceleration", multiplier);
+            if (unit is not null)
+                w.WriteString("unit", unit);
+        });
 
     private void OnButtonDown(PanelRow row)
     {
@@ -225,12 +282,26 @@ public sealed class PanelController : IDisposable
         {
             case Selector.Com1 or Selector.Com2 or Selector.Nav1 or Selector.Nav2:
                 var radio = ToTunable(selector);
-                _pending.Remove(FieldOf(radio)); // the sim's swapped values are the truth now
+                long now = _time.GetTimestamp();
+                // Show the swap right away (including a standby value the knobs just set and the sim hasn't
+                // confirmed yet). Some radios take a moment: they swap when the press ends, in two steps.
+                var shown = Effective(_sim.State, now).Get(radio);
+                _pending.Remove(FieldOf(radio));
+                var swapped = new RadioPair(shown.StandbyKhz, shown.ActiveKhz);
+                if (_sim.IsConnected && shown.ActiveKhz > 0 && shown.StandbyKhz > 0)
+                    _swapped[radio] = (swapped, now + Ticks(HoldOff));
                 _sim.Send(new SwapRadio(radio));
                 _log.LogDebug("Swap {Radio}", radio);
+                RecordAction("swap", row, w =>
+                {
+                    w.WriteString("radio", radio.ToString());
+                    w.WriteNumber("active", swapped.ActiveKhz);
+                    w.WriteNumber("standby", swapped.StandbyKhz);
+                });
                 break;
             case Selector.Xpdr:
                 _editBaro[i] = !_editBaro[i];
+                RecordAction("focus", row, w => w.WriteString("edits", _editBaro[i] ? "altimeter" : "squawk"));
                 break;
         }
     }
@@ -252,18 +323,24 @@ public sealed class PanelController : IDisposable
                     _pending.Remove(Field.Baro);
                     _sim.Send(new SetBaroStandard());
                     _log.LogDebug("Baro STD");
+                    RecordAction("hold", row, w => w.WriteString("action", "standard pressure"));
                     break;
                 case Selector.Xpdr when _sim.IsConnected:
                     int vfr = _settings.Current.VfrSquawk;
                     SetPending(Field.Squawk, vfr);
                     _sim.Send(new SetSquawk(vfr));
                     _log.LogDebug("Squawk VFR {Code:0000}", vfr);
+                    RecordAction("hold", row, w => w.WriteString("action", $"VFR squawk {vfr:0000}"));
                     break;
                 case Selector.Com1 or Selector.Com2:
                     var spacing = _settings.Current.ComSpacing == ComSpacing.Khz833 ? ComSpacing.Khz25 : ComSpacing.Khz833;
                     _settings.Update(s => s with { ComSpacing = spacing });
                     _flash[i] = (spacing == ComSpacing.Khz833 ? "8.33" : "25", "", _time.GetTimestamp() + Ticks(FlashTime));
                     _log.LogInformation("COM spacing set to {Spacing}.", spacing);
+                    RecordAction("hold", row, w => w.WriteString("action", $"COM spacing {spacing}"));
+                    break;
+                default:
+                    RecordAction("hold", row, w => w.WriteString("action", "none"));
                     break;
             }
         }
@@ -284,6 +361,18 @@ public sealed class PanelController : IDisposable
             var (ll, lr) = RowText(PanelRow.Lower, state, simConnected, settings, now);
             var displays = new PanelDisplays(ul, ur, ll, lr);
             _panel.Show(displays);
+
+            if (displays != _recordedDisplays && _recorder.IsRecording)
+            {
+                _recordedDisplays = displays;
+                _recorder.Record("controller", "displays", w =>
+                {
+                    w.WriteString("upperLeft", displays.UpperLeft);
+                    w.WriteString("upperRight", displays.UpperRight);
+                    w.WriteString("lowerLeft", displays.LowerLeft);
+                    w.WriteString("lowerRight", displays.LowerRight);
+                });
+            }
 
             view = new PanelView(_panel.IsConnected, simConnected, simConnected ? _sim.Name : "", _selectors[0], _selectors[1], displays, _activity[0], _activity[1], _sim.Notice);
             if (view == View)
@@ -326,17 +415,50 @@ public sealed class PanelController : IDisposable
     /// <summary>The sim state with still-unconfirmed panel changes laid over it.</summary>
     private RadioState Effective(RadioState state, long now)
     {
+        var sim = state;
+        foreach (var (radio, (expected, until)) in _swapped.ToList())
+        {
+            var actual = sim.Get(radio);
+            // A standby value the knobs set after the swap is the pending value's business, not the swap's.
+            bool done = actual.ActiveKhz == expected.ActiveKhz
+                        && (actual.StandbyKhz == expected.StandbyKhz || _pending.ContainsKey(FieldOf(radio)));
+            if (done || now >= until)
+            {
+                _swapped.Remove(radio);
+                if (!done)
+                    RecordUnconfirmed($"{radio} swap", $"{expected.ActiveKhz}/{expected.StandbyKhz}", $"{actual.ActiveKhz}/{actual.StandbyKhz}");
+                continue;
+            }
+            state = state.With(radio, expected);
+        }
+
         foreach (var (field, (value, until)) in _pending.ToList())
         {
-            if (now >= until || Confirms(state, field, value))
+            bool confirmed = Confirms(sim, field, value);
+            if (confirmed || now >= until)
             {
                 _pending.Remove(field);
+                if (!confirmed)
+                    RecordUnconfirmed(field.ToString(), value.ToString(System.Globalization.CultureInfo.InvariantCulture), SimValue(sim, field));
                 continue;
             }
             state = Apply(state, field, value);
         }
         return state;
     }
+
+    /// <summary>The sim didn't take a value within the hold-off (or changed it right back): worth knowing in a recording.</summary>
+    private void RecordUnconfirmed(string what, string sent, string simulator) =>
+        _recorder.Record("controller", "unconfirmed", w =>
+        {
+            w.WriteString("what", what);
+            w.WriteString("sent", sent);
+            w.WriteString("simulator", simulator);
+        });
+
+    private static string SimValue(RadioState s, Field field) => field == Field.Baro
+        ? s.BaroHpa.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+        : Read(s, field).ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     private void SetPending(Field field, double value) =>
         _pending[field] = (value, _time.GetTimestamp() + Ticks(HoldOff));

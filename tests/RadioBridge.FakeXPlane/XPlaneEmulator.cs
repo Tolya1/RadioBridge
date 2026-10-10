@@ -36,11 +36,23 @@ public sealed class XPlaneEmulator : IAsyncDisposable
     private CancellationTokenSource? _pushCts;
     private Task? _pushLoop;
 
+    private long _nextId = 4000;
+
+    /// <summary>Adds a dataref, e.g. one an aircraft add-on would publish. Call before clients connect.</summary>
+    public long AddDataref(string name, string type, double value)
+    {
+        lock (_gate)
+        {
+            _nextId += 3;
+            _byName[name] = _byId[_nextId] = new Dataref(_nextId, name, type, value);
+            return _nextId;
+        }
+    }
+
     public XPlaneEmulator(int port = 0)
     {
         Port = port;
-        long id = 4000;
-        void Add(string name, string type, double value) => _byName[name] = _byId[id += 3] = new Dataref(id, name, type, value);
+        void Add(string name, string type, double value) => AddDataref(name, type, value);
 
         foreach (int n in (int[])[1, 2])
         {
@@ -59,13 +71,24 @@ public sealed class XPlaneEmulator : IAsyncDisposable
 
         foreach (var name in (string[])["sim/radios/com1_standy_flip", "sim/radios/com2_standy_flip", "sim/radios/nav1_standy_flip",
                      "sim/radios/nav2_standy_flip", "sim/instruments/barometer_2992", "sim/instruments/barometer_std"])
-            _commands[name] = id += 3;
+            _commands[name] = _nextId += 3;
     }
 
     public int Port { get; private set; }
 
     /// <summary>When false, COM radios behave like 25 kHz-only radios and snap 8.33 channels.</summary>
     public bool Com833Capable { get; set; } = true;
+
+    /// <summary>
+    /// Radios that swap only when the flip command is released after being held for at least a frame, like
+    /// REP's Bendix King KX165 in the SF-260: a press that begins and ends in the same frame does nothing.
+    /// </summary>
+    public bool FlipOnRelease { get; set; }
+
+    /// <summary>One frame at 30 fps: shorter presses don't count with <see cref="FlipOnRelease"/>.</summary>
+    public static readonly TimeSpan Frame = TimeSpan.FromMilliseconds(33);
+
+    private readonly Dictionary<long, DateTime> _held = new();
 
     public string Version { get; set; } = "12.4.4-emulated";
 
@@ -135,10 +158,12 @@ public sealed class XPlaneEmulator : IAsyncDisposable
         });
         app.MapGet("/api/v2/commands", (HttpRequest r) =>
             Results.Json(new { data = Filter(r, _commands.Keys).Select(n => new { id = _commands[n], name = n, description = n }) }));
-        app.MapPost("/api/v2/command/{id:long}/activate", (long id) =>
+        app.MapPost("/api/v2/command/{id:long}/activate", async (long id, HttpRequest r) =>
         {
+            var body = r.ContentLength > 0 ? await JsonNode.ParseAsync(r.Body) : null;
+            double duration = body?["duration"]?.GetValue<double>() ?? 0;
             lock (_gate)
-                return RunCommand(id) ? Results.Ok() : Error(404, "invalid_command_id");
+                return Press(id, duration) ? Results.Ok() : Error(404, "invalid_command_id");
         });
         app.Map("/api/v2", async (HttpContext context) =>
         {
@@ -224,6 +249,41 @@ public sealed class XPlaneEmulator : IAsyncDisposable
         _byName[name833[..^4]].Value = khz / 10;
     }
 
+    /// <summary>A press held for <paramref name="seconds"/> (0: begin and end in the same frame). Call under the lock.</summary>
+    private bool Press(long id, double seconds)
+    {
+        if (!_commands.ContainsValue(id))
+            return false;
+        if (!ActsOnRelease(id))
+            return RunCommand(id);
+        if (seconds >= Frame.TotalSeconds)
+        {
+            _ = Task.Delay(TimeSpan.FromSeconds(seconds)).ContinueWith(_ =>
+            {
+                lock (_gate)
+                    RunCommand(id);
+            }, TaskScheduler.Default);
+        }
+        return true;
+    }
+
+    private void Begin(long id)
+    {
+        if (ActsOnRelease(id))
+            _held[id] = DateTime.UtcNow;
+        else
+            RunCommand(id);
+    }
+
+    private void End(long id)
+    {
+        if (_held.Remove(id, out var since) && DateTime.UtcNow - since >= Frame)
+            RunCommand(id);
+    }
+
+    private bool ActsOnRelease(long id) =>
+        FlipOnRelease && _commands.FirstOrDefault(c => c.Value == id).Key?.EndsWith("_standy_flip", StringComparison.Ordinal) == true;
+
     private bool RunCommand(long id)
     {
         var name = _commands.FirstOrDefault(c => c.Value == id).Key;
@@ -307,6 +367,15 @@ public sealed class XPlaneEmulator : IAsyncDisposable
                     }
                     return Result(null);
 
+                case "dataref_unsubscribe_values":
+                    foreach (var item in p.GetProperty("datarefs").EnumerateArray())
+                    {
+                        long id = item.GetProperty("id").GetInt64();
+                        client.Subscribed.Remove(id);
+                        client.LastSent.Remove(id);
+                    }
+                    return Result(null);
+
                 case "dataref_set_values":
                     foreach (var item in p.GetProperty("datarefs").EnumerateArray())
                     {
@@ -322,8 +391,16 @@ public sealed class XPlaneEmulator : IAsyncDisposable
                 case "command_set_is_active":
                     foreach (var item in p.GetProperty("commands").EnumerateArray())
                     {
-                        if (item.GetProperty("is_active").GetBoolean() && !RunCommand(item.GetProperty("id").GetInt64()))
+                        long id = item.GetProperty("id").GetInt64();
+                        if (!_commands.ContainsValue(id))
                             return Result("invalid_command_id");
+                        bool active = item.GetProperty("is_active").GetBoolean();
+                        if (active && item.TryGetProperty("duration", out var duration))
+                            Press(id, duration.GetDouble());
+                        else if (active)
+                            Begin(id);
+                        else
+                            End(id);
                     }
                     return Result(null);
 

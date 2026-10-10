@@ -6,6 +6,7 @@ using Avalonia.Platform;
 using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
 using RadioBridge.Core;
+using RadioBridge.Core.Diagnostics;
 using RadioBridge.Core.Docs;
 using RadioBridge.Core.Settings;
 
@@ -32,11 +33,12 @@ public partial class App : Application
         {
             _desktop = desktop;
             var options = Program.Options;
-            var loggers = Program.CreateLoggers(options.LogDirectory, console: false);
+            var recorder = new Recorder();
+            var loggers = Program.CreateLoggers(options.LogDirectory, console: false, recorder);
             var log = _log = loggers.CreateLogger<App>();
             log.LogInformation("RadioBridge {Version} starting on {OS}.", typeof(App).Assembly.GetName().Version, Environment.OSVersion);
 
-            var host = new BridgeHost(options, loggers, () => Dispatcher.UIThread.Post(() => Quit("automation request")));
+            var host = new BridgeHost(options, loggers, () => Dispatcher.UIThread.Post(() => Quit("automation request")), recorder);
             var settings = _settings = host.Settings;
 
             // The app lives until Quit: closing the window may only hide it to the tray.
@@ -50,10 +52,10 @@ public partial class App : Application
 
             _window = new MainWindow
             {
-                DataContext = new MainViewModel(host.Controller, settings, options.LogDirectory) { TestModeForced = options.TestMode },
+                DataContext = new MainViewModel(host, options.LogDirectory) { TestModeForced = options.TestMode },
             };
             _window.Closing += OnWindowClosing;
-            _tray = CreateTray(settings);
+            _tray = CreateTray(host);
             host.Controller.ViewChanged += () =>
             {
                 var view = host.Controller.View;
@@ -84,8 +86,9 @@ public partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    private TrayIcon CreateTray(SettingsStore settings)
+    private TrayIcon CreateTray(BridgeHost host)
     {
+        var settings = host.Settings;
         var show = new NativeMenuItem("Show RadioBridge");
         show.Click += (_, _) => ShowWindow();
         var testMode = new NativeMenuItem("Test mode")
@@ -94,6 +97,19 @@ public partial class App : Application
             IsChecked = settings.Current.TestMode,
         };
         testMode.Click += (_, _) => settings.Update(s => s with { TestMode = !s.TestMode });
+        var record = new NativeMenuItem("Record debug log")
+        {
+            ToggleType = MenuItemToggleType.CheckBox,
+            IsChecked = host.Recorder.IsRecording,
+        };
+        record.Click += (_, _) =>
+        {
+            if (host.Recorder.IsRecording)
+                host.StopRecording();
+            else
+                host.StartRecording();
+        };
+        host.Recorder.Changed += () => Dispatcher.UIThread.Post(() => record.IsChecked = host.Recorder.IsRecording);
         var quit = new NativeMenuItem("Quit");
         quit.Click += (_, _) => Quit("tray menu");
 
@@ -101,7 +117,7 @@ public partial class App : Application
         {
             Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://RadioBridge/Assets/radiobridge.ico"))),
             ToolTipText = "RadioBridge",
-            Menu = [show, testMode, new NativeMenuItemSeparator(), quit],
+            Menu = [show, testMode, record, new NativeMenuItemSeparator(), quit],
             IsVisible = settings.Current.CloseToTray,
         };
         tray.Clicked += (_, _) => ShowWindow();

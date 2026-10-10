@@ -11,8 +11,10 @@ public sealed record PanelInfo(bool Connected, Selector? Upper, Selector? Lower,
 
 public sealed record SimInfo(bool Connected, string Name, RadioState State, SimNotice? Notice);
 
+public sealed record RecordingInfo(bool Active, string? Path, long Bytes);
+
 /// <summary>GET /api/state.</summary>
-public sealed record AppState(PanelInfo Panel, PanelDisplays Displays, string DisplayReport, SimInfo Sim, BridgeSettings Settings);
+public sealed record AppState(PanelInfo Panel, PanelDisplays Displays, string DisplayReport, SimInfo Sim, BridgeSettings Settings, RecordingInfo? Recording);
 
 /// <summary>
 /// Drives the running app through its automation API. Panel input is sent as raw 24-bit reports,
@@ -52,6 +54,14 @@ public sealed class AppClient(HttpClient http)
     public async Task ShutdownAsync()
     {
         using var response = await http.PostAsync("shutdown", null);
+    }
+
+    /// <summary>Starts or stops the debug recording.</summary>
+    public async Task<RecordingInfo> RecordAsync(bool on)
+    {
+        using var response = await http.PostAsJsonAsync("recording", new { on }, AutomationServer.Json);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<RecordingInfo>(AutomationServer.Json) ?? throw new InvalidOperationException("Empty reply.");
     }
 
     public async Task SelectAsync(PanelRow row, Selector selector)

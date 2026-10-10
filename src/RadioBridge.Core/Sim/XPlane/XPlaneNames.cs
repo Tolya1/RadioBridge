@@ -12,10 +12,19 @@ internal static class XPlaneNames
     public const string Baro = "sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot";
 
     /// <summary>
-    /// Standard pressure as an altimeter setting. X-Plane's own command sets its internal 1013.25 hPa
-    /// (29.92125 inHg), which no altimeter can be set to, so standard pressure is written as this instead.
+    /// Standard pressure as an altimeter setting in inHg. X-Plane's own command sets its internal 1013.25 hPa
+    /// (29.92125 inHg), which no inHg altimeter can be set to, so standard pressure is written as 29.92
+    /// (shown as 1013 by an hPa altimeter) instead.
     /// </summary>
-    public const double StandardBaro = 29.92;
+    public const double StandardBaroInHg = 29.92;
+
+    /// <summary>
+    /// Added to every altimeter setting written. The dataref is a 32-bit float, so a value like 29.91 is
+    /// stored as 29.909999…, and cockpits that cut digits off rather than round show it one step too low:
+    /// the Thranda PC-6 draws floor(inHg × 100) in inHg and floor(inHg × 33.864) in hPa. A margin far
+    /// below anything an altimeter shows (0.002 hPa) puts the stored value just above the setting instead.
+    /// </summary>
+    public const double BaroMarginInHg = 0.00005;
 
     // COM uses the *_hz_833 datarefs (whole kHz) so 8.33 channels survive the round trip; the plain
     // COM datarefs have 10 kHz resolution. NAV datarefs are in units of 10 kHz.
@@ -65,12 +74,16 @@ internal static class XPlaneNames
     public static long FrequencyRaw(Tunable radio, int khz) => IsCom(radio) ? khz : khz / 10;
 
     /// <summary>
-    /// The altimeter setting to write, in inHg with two decimals (29.92). X-Plane stores inches of mercury,
-    /// and an altimeter moves in hundredths, so a whole-hPa step (1040 hPa = 30.7105 inHg) lands on the
-    /// nearest valid value (30.71) instead of a number like 30.711. Every hPa in the allowed range maps to a
-    /// different value and reads back as the same hPa, so stepping by one hPa never stalls or skips.
+    /// The altimeter setting to write, in inHg (X-Plane's unit): exactly the setting the knob chose, plus
+    /// <see cref="BaroMarginInHg"/>. In hPa that is the whole hPa (1040 hPa = 30.7112 inHg, which is also
+    /// what X-Plane's own knob stores in hPa), in inHg the two-decimal value (29.91). Rounding an hPa setting
+    /// to two inHg decimals instead would move it: 1013 hPa would become 29.91 inHg = 1012.9 hPa, and an
+    /// altimeter that truncates shows 1012.
     /// </summary>
-    public static double BaroRaw(double hpa) => Math.Round(hpa / DisplayFormat.HpaPerInHg, 2);
+    public static double BaroRaw(double hpa) => hpa / DisplayFormat.HpaPerInHg + BaroMarginInHg;
+
+    /// <summary>Standard pressure as written: 29.92 inHg, plus the margin.</summary>
+    public static double StandardBaroRaw => StandardBaroInHg + BaroMarginInHg;
 
     private static bool IsCom(Tunable radio) => radio is Tunable.Com1 or Tunable.Com2;
 

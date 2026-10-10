@@ -28,6 +28,7 @@ general-purpose panel software, made for one panel and done properly:
 - [Settings](#settings)
 - [Command line](#command-line)
 - [Troubleshooting](#troubleshooting)
+- [Reporting a problem](#reporting-a-problem)
 - [Development](#development)
 - [License](#license)
 
@@ -149,10 +150,13 @@ Some details:
 - **Fast spins accelerate on COM1 and COM2 only**, gently: detents less than 40 ms apart count ×2,
   and less than 20 ms ×3, so a normal turn always moves one channel per detent. NAV, ADF, squawk and
   altimeter always move exactly one step per detent. The limits can be changed in the settings.
-- When you change a frequency, the panel shows your new value right away and keeps it for under a
-  second while the simulator catches up. After that the simulator's value always wins. So if a radio
+- When you change a frequency or swap, the panel shows the result right away and keeps it for under
+  a second while the simulator catches up. After that the simulator's value always wins. So if a radio
   can't tune 8.33 kHz and snaps back, the panel shows that. **Hold ACT/STBY** to switch the inner knob
   to 25 kHz steps for that aircraft.
+- ACT/STBY reaches the simulator as a short press, like a click on the cockpit button. Some add-on
+  radios only swap when the button is released (REP's Bendix King radios in the SF-260, for one), and
+  this works for them too.
 - When RadioBridge starts, it reads where the selectors are, so the displays fill in right away. On
   macOS this may need one turn of a selector.
 
@@ -181,9 +185,10 @@ and prints every knob, selector and button event for 20 seconds.
   When a simulator can't connect for a reason you can fix (MSFS is running but no SimConnect library
   was found, X-Plane refuses connections or is too old), a banner under the status says so.
 - **Settings**, folded away below.
-- **Readme**, **License** and **Third-party notices** buttons under the settings, and the version
-  (with the commit it was built from) for bug reports. They open the documents that are built into
-  the executable, so everything is in the one file.
+- **Record debug log** under the settings: see [Reporting a problem](#reporting-a-problem).
+- **Readme**, **License** and **Third-party notices** buttons, and the version (with the commit it was
+  built from) for bug reports. They open the documents that are built into the executable, so
+  everything is in the one file.
 
 The first time RadioBridge starts, and on every start after that until you choose **Don't show again**,
 a window shows the readme, the license and the third-party notices. **Close** closes it for now. You
@@ -193,7 +198,7 @@ can turn it back on in **Settings › Window**.
 
 Closing the window quits RadioBridge. To keep it running in the background, turn on **Settings ›
 Window › Keep running in the tray**. Then closing the window hides it to the tray: click the tray
-icon to bring it back, and use its menu for **Test mode** and **Quit**. Windows 11 puts new tray icons
+icon to bring it back, and use its menu for **Test mode**, **Record debug log** and **Quit**. Windows 11 puts new tray icons
 in the hidden-icons overflow (`^`), so drag the icon onto the taskbar to keep it in sight.
 
 Launching RadioBridge while it is already running brings the running window to the front, even when
@@ -203,7 +208,7 @@ it is hidden in the tray.
 
 Settings are in the window and are saved immediately to `settings.json` in the data folder:
 
-| OS | Data folder (settings and logs) |
+| OS | Data folder (settings, logs and recordings) |
 |---|---|
 | Windows | `%APPDATA%\RadioBridge` |
 | Linux / macOS | `~/.config/RadioBridge` |
@@ -231,10 +236,11 @@ RadioBridge [options]
   --headless           Run without a window (stop with Ctrl+C), e.g. on a sim PC without a desktop session.
   --minimized          Start hidden in the tray (or minimized when the tray option is off).
   --test-mode          Drive the panel with built-in test radios while no simulator is connected.
+  --record             Start a debug recording right away (see Reporting a problem).
   --panel-test         Check the panel: show test patterns, then print knob and button events.
   --no-panel           Do not open the USB panel.
   --automation PORT    Enable the local automation API (testing only, see docs/testing.md).
-  --data-dir DIR       Use another folder for settings.json and logs.
+  --data-dir DIR       Use another folder for settings.json, logs and recordings.
   --readme             Print the readme that is built into this executable.
   --licenses           Print the license and the third-party notices built into this executable.
 ```
@@ -261,10 +267,36 @@ run with both `--automation` and `--no-panel`, which never touches the panel (se
 | *No simulator* with X-Plane running | X-Plane 12.1.4+? **Disable incoming traffic** off? Same port? The log says exactly why it can't connect. |
 | *No simulator* with MSFS running | The window shows a banner when it can't find a usable SimConnect library: use **Locate SimConnect.dll…** (it must be the 64-bit one). The log names the library it uses, or lists every place it searched. |
 | COM steps snap back to the previous value | That aircraft's radio only supports 25 kHz. Hold ACT/STBY on COM to switch to 25 kHz steps. |
-| Add-on aircraft ignores the panel | Some airliners (custom radio management panels) don't use the simulator's standard radios, so no external tool can tune them this way. |
+| Add-on aircraft ignores the panel | Some airliners (custom radio management panels) don't use the simulator's standard radios, so no external tool can tune them this way. Make a [debug recording](#reporting-a-problem): it shows what the aircraft does with what RadioBridge sends. |
+| Values change by themselves | Something else writes the same radios: another panel program, an add-on (a GTN, an ATC tool) or the aircraft itself. A [debug recording](#reporting-a-problem) shows which value changed when, and whether RadioBridge sent it. |
 
-Logs are in the `logs` folder in the data folder (one file per day, the last 7 kept). Please attach
-the latest one to bug reports.
+Logs are in the `logs` folder in the data folder (one file per day, the last 7 kept).
+
+## Reporting a problem
+
+When the panel does something odd, a **debug recording** shows exactly what happened:
+
+1. Click **Record debug log** in the window (or use the tray menu, or start RadioBridge with
+   `--record` to include the start).
+2. Do what goes wrong: turn the knob, press ACT/STBY, wait until the values misbehave.
+3. Click **Stop recording**, then **Open folder**, and attach the newest file to your report
+   ([GitHub issues](https://github.com/Tolya1/RadioBridge/issues)). Zip it if it is big.
+
+The recording holds everything RadioBridge sees and does: the panel's raw input and what its displays
+show, every decision (a knob step from one value to another, a swap, a hold), every value sent to the
+simulator and every reply, and the values the simulator reports. With X-Plane it also watches the
+radio, altimeter and avionics-power datarefs of the loaded aircraft and its add-ons (for example REP's
+Bendix King radios, a GTN or a custom altimeter), because add-ons often run their own radios and their
+datarefs show what the cockpit really does. RadioBridge's log lines and settings are in it too.
+
+It stays on your computer (in the `recordings` folder in the data folder) until you send it. It holds
+no personal data beyond your user name in file paths and the version of your operating system.
+A recording stops by itself at 200 MB.
+
+The file is [JSON Lines](https://jsonlines.org): one event per line, each with `ms` (milliseconds since
+the recording started), `t` (the time of day), `src` (`panel`, `controller`, `sim`, `xplane`, `msfs`,
+`settings`, `log`, `recorder`) and `ev` (what happened), plus that event's own fields. It reads fine in a
+text editor, and tools such as `jq` can filter it.
 
 ## Development
 

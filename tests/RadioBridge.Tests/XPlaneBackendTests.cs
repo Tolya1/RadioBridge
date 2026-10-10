@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using RadioBridge.Core.Radio;
 using RadioBridge.Core.Sim;
 using RadioBridge.Core.Sim.XPlane;
 using RadioBridge.FakeXPlane;
@@ -99,16 +100,22 @@ public sealed class XPlaneBackendTests : IAsyncLifetime
         await Wait.Until(() => Math.Abs(_backend.State.BaroHpa - 1013.2) < 0.1, "standard pressure");
     }
 
-    [Fact]
-    public async Task Altimeter_settings_are_written_in_hundredths_of_an_inch()
+    private async Task<double> WrittenBaroAsync()
     {
-        _backend.Send(new SetBaro(1040)); // 30.7105 inHg: no altimeter can be set to 30.711
         var set = await NextMessageAsync("dataref_set_values");
-        Assert.Equal("30.71", set.GetProperty("params").GetProperty("datarefs")[0].GetProperty("value").GetRawText());
+        var item = set.GetProperty("params").GetProperty("datarefs")[0];
+        Assert.Equal(_xplane.IdOf("sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot"), item.GetProperty("id").GetInt64());
+        return item.GetProperty("value").GetDouble();
+    }
 
-        _backend.Send(new SetBaro(1013.25));
-        set = await NextMessageAsync("dataref_set_values");
-        Assert.Equal("29.92", set.GetProperty("params").GetProperty("datarefs")[0].GetProperty("value").GetRawText());
+    [Fact]
+    public async Task Altimeter_settings_are_written_exactly_with_a_margin_for_truncating_cockpits()
+    {
+        _backend.Send(new SetBaro(1040)); // a whole hPa, as the hPa knob sets it: 30.7112 inHg, like X-Plane's own knob
+        Assert.Equal(1040 / DisplayFormat.HpaPerInHg + XPlaneNames.BaroMarginInHg, await WrittenBaroAsync(), 9);
+
+        _backend.Send(new SetBaro(29.91 * DisplayFormat.HpaPerInHg)); // as the inHg knob sets it
+        Assert.Equal(29.91 + XPlaneNames.BaroMarginInHg, await WrittenBaroAsync(), 9);
     }
 
     [Fact]
@@ -116,23 +123,32 @@ public sealed class XPlaneBackendTests : IAsyncLifetime
     {
         _backend.Send(new SetBaroStandard());
 
-        var set = await NextMessageAsync("dataref_set_values"); // a write, not X-Plane's command, which leaves 29.92125
-        var item = set.GetProperty("params").GetProperty("datarefs")[0];
-        Assert.Equal(_xplane.IdOf("sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot"), item.GetProperty("id").GetInt64());
-        Assert.Equal("29.92", item.GetProperty("value").GetRawText());
-        await Wait.Until(() => _xplane["sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot"] == 29.92, "29.92 in X-Plane");
+        // A write, not X-Plane's command, which leaves 29.92125.
+        Assert.Equal(29.92 + XPlaneNames.BaroMarginInHg, await WrittenBaroAsync(), 9);
+        await Wait.Until(() => Math.Abs(_xplane["sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot"] - 29.92) < 0.0001, "29.92 in X-Plane");
     }
 
     [Fact]
-    public async Task Swap_runs_the_flip_command_once()
+    public async Task Swap_presses_the_flip_command_like_a_quick_click()
     {
         _backend.Send(new SwapRadio(Tunable.Com1));
 
         var message = await NextMessageAsync("command_set_is_active");
         var command = message.GetProperty("params").GetProperty("commands")[0];
         Assert.Equal(_xplane.IdOf("sim/radios/com1_standy_flip"), command.GetProperty("id").GetInt64());
-        Assert.Equal(0, command.GetProperty("duration").GetInt32());
+        Assert.True(command.GetProperty("is_active").GetBoolean());
+        Assert.Equal(0.15, command.GetProperty("duration").GetDouble()); // held, so radios that act on release see a press
         await Wait.Until(() => _backend.State.Com1 == new RadioPair(121_500, 118_000), "the swapped radio");
+    }
+
+    [Fact]
+    public async Task Swap_works_on_radios_that_flip_when_the_press_ends()
+    {
+        _xplane.FlipOnRelease = true; // REP's KX165 in the SF-260
+
+        _backend.Send(new SwapRadio(Tunable.Com2));
+
+        await Wait.Until(() => _backend.State.Com2 == new RadioPair(119_250, 122_800), "COM2 to swap on release");
     }
 
     [Fact]
@@ -263,8 +279,46 @@ public sealed class XPlaneWriteLoggingTests : IAsyncLifetime
         _backend.Send(new SetSquawk(1200));
 
         await Wait.Until(() => _log.Messages.Count(m => m.StartsWith("X-Plane <-")) >= 3, "the log lines");
-        Assert.Contains(_log.Messages, m => m.Contains("barometer_setting_in_hg_pilot") && m.EndsWith("30.71"));
-        Assert.Contains(_log.Messages, m => m.Contains("barometer_setting_in_hg_pilot") && m.EndsWith("29.92"));
+        Assert.Contains(_log.Messages, m => m.Contains("barometer_setting_in_hg_pilot = 30.711"));
+        Assert.Contains(_log.Messages, m => m.Contains("barometer_setting_in_hg_pilot = 29.92005"));
         Assert.Contains(_log.Messages, m => m.Contains("transponder_code") && m.EndsWith("1200"));
+    }
+}
+
+/// <summary>The emulator's model of a radio that flips on release, which the swap tests rely on.</summary>
+public sealed class XPlaneEmulatorFlipTests : IAsyncLifetime
+{
+    private readonly XPlaneEmulator _xplane = new() { FlipOnRelease = true };
+
+    public Task InitializeAsync() => _xplane.StartAsync();
+
+    public async Task DisposeAsync() => await _xplane.DisposeAsync();
+
+    private async Task PressAsync(System.Net.WebSockets.ClientWebSocket socket, string command, double seconds)
+    {
+        string json = JsonSerializer.Serialize(new
+        {
+            req_id = 1,
+            type = "command_set_is_active",
+            @params = new { commands = new[] { new { id = _xplane.IdOf(command), is_active = true, duration = seconds } } },
+        });
+        await socket.SendAsync(System.Text.Encoding.UTF8.GetBytes(json), System.Net.WebSockets.WebSocketMessageType.Text, true, CancellationToken.None);
+        await socket.ReceiveAsync(new byte[4096], CancellationToken.None); // the result
+    }
+
+    [Fact]
+    public async Task A_press_that_starts_and_ends_at_once_does_nothing_but_a_held_one_flips_on_release()
+    {
+        using var socket = new System.Net.WebSockets.ClientWebSocket();
+        await socket.ConnectAsync(new Uri($"ws://127.0.0.1:{_xplane.Port}/api/v2"), CancellationToken.None);
+        const string Active = "sim/cockpit2/radios/actuators/com1_frequency_hz_833";
+
+        await PressAsync(socket, "sim/radios/com1_standy_flip", 0);
+        await Task.Delay(300);
+        Assert.Equal(118_000, _xplane[Active]);
+
+        await PressAsync(socket, "sim/radios/com1_standy_flip", 0.15);
+        Assert.Equal(118_000, _xplane[Active]); // still held
+        await Wait.Until(() => _xplane[Active] == 121_500, "the flip on release");
     }
 }

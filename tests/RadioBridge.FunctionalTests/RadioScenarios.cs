@@ -88,6 +88,27 @@ public sealed class RadioScenarios(AppFixture fx) : IAsyncLifetime
         await App.WaitForAsync(s => s.Sim.State.Com1 == swapped && s.Displays.UpperLeft == Com(swapped.ActiveKhz), "COM1 to swap");
     }
 
+    [SkippableFact]
+    public async Task Act_stby_swaps_radios_that_flip_when_the_press_ends()
+    {
+        Skip.If(fx.Emulator is null, "Emulator only: needs a radio known to swap on release (like REP's KX165 in the SF-260).");
+        await App.SelectAsync(Upper, Selector.Com2);
+        var before = await GivenAsync(s => s.Com2 == new RadioPair(122_800, 119_250),
+            ($"{Radios}com2_frequency_hz_833", 122_800), ($"{Radios}com2_standby_frequency_hz_833", 119_250));
+        fx.Emulator!.FlipOnRelease = true;
+        try
+        {
+            await App.PressAsync(Upper);
+
+            var swapped = new RadioPair(before.Com2.StandbyKhz, before.Com2.ActiveKhz);
+            await App.WaitForAsync(s => s.Sim.State.Com2 == swapped && s.Displays.UpperLeft == Com(swapped.ActiveKhz), "COM2 to swap on release");
+        }
+        finally
+        {
+            fx.Emulator.FlipOnRelease = false;
+        }
+    }
+
     [Fact]
     public async Task Fast_spin_accelerates_and_panel_ends_in_agreement_with_the_sim()
     {
@@ -320,7 +341,8 @@ public sealed class RadioScenarios(AppFixture fx) : IAsyncLifetime
             fx.Emulator.RefuseConnections = false;
         }
 
-        await App.WaitForAsync(s => s.Sim.Connected && s.Sim.Notice is null, "the app to connect and drop the notice", timeoutMs: 15_000);
+        // ...and has values again (they arrive a moment after the connection), so the next test starts from a live sim.
+        await App.WaitForAsync(s => s.Sim.Connected && s.Sim.Notice is null && s.Sim.State.Squawk >= 0, "the app to connect and drop the notice", timeoutMs: 15_000);
     }
 
     [SkippableFact]

@@ -10,20 +10,29 @@ namespace RadioBridge.Desktop;
 
 public sealed class MainViewModel : INotifyPropertyChanged
 {
+    private readonly BridgeHost _host;
     private readonly SettingsStore _settings;
+    private readonly DispatcherTimer _recordingTimer;
     private PanelView _view;
 
-    public MainViewModel(PanelController controller, SettingsStore settings, string logDirectory)
+    public MainViewModel(BridgeHost host, string logDirectory)
     {
-        _settings = settings;
+        _host = host;
+        _settings = host.Settings;
         LogPath = logDirectory;
+        var controller = host.Controller;
         _view = controller.View;
         controller.ViewChanged += () =>
         {
             var view = controller.View;
             Dispatcher.UIThread.Post(() => ShowView(view));
         };
-        settings.Changed += _ => Dispatcher.UIThread.Post(() => Raise(null));
+        _settings.Changed += _ => Dispatcher.UIThread.Post(() => Raise(null));
+
+        // The file grows while recording: refresh its size now and then.
+        _recordingTimer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => Raise(nameof(RecordingStatus)));
+        host.Recorder.Changed += () => Dispatcher.UIThread.Post(OnRecordingChanged);
+        OnRecordingChanged();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -191,6 +200,48 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public string SettingsPath => _settings.FilePath;
     public string LogPath { get; }
+
+    // ---- debug recording ----
+
+    public bool IsRecording => _host.Recorder.IsRecording;
+
+    public string RecordButtonText => IsRecording ? "Stop recording" : "Record debug log";
+
+    public string RecordingStatus
+    {
+        get
+        {
+            var recorder = _host.Recorder;
+            string? file = recorder.FilePath is { } path ? Path.GetFileName(path) : null;
+            if (recorder.IsRecording)
+                return $"Recording to {file} ({Size(recorder.BytesWritten)}). Reproduce the problem, then stop.";
+            return file is null
+                ? "Saves everything the panel, RadioBridge and the simulator do to a file you can send with a bug report."
+                : $"Saved {file} ({Size(recorder.BytesWritten)}).";
+        }
+    }
+
+    public string RecordingDirectory => _host.RecordingDirectory;
+
+    public void ToggleRecording()
+    {
+        if (IsRecording)
+            _host.StopRecording();
+        else
+            _host.StartRecording();
+    }
+
+    private void OnRecordingChanged()
+    {
+        _recordingTimer.IsEnabled = IsRecording;
+        Raise(nameof(IsRecording));
+        Raise(nameof(RecordButtonText));
+        Raise(nameof(RecordingStatus));
+    }
+
+    private static string Size(long bytes) => bytes < 1024 * 1024
+        ? $"{Math.Max(1, bytes / 1024)} KB"
+        : $"{bytes / (1024.0 * 1024):0.0} MB";
 
     private void ShowView(PanelView view)
     {

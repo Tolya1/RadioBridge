@@ -13,7 +13,8 @@ public static class DisplayFormat
 {
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-    public const double HpaPerInHg = 33.8639;
+    /// <summary>33.8639: X-Plane's conversion (standard pressure, 1013.25 hPa, is 29.92125 inHg).</summary>
+    public const double HpaPerInHg = 1013.25 / 29.92125;
 
     /// <summary>
     /// COM channel. Compact drops the leading '1' every COM frequency has and keeps all three decimals

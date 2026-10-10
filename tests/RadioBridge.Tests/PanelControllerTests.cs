@@ -168,6 +168,45 @@ public sealed class PanelControllerTests : IDisposable
         Assert.Equal(new SwapRadio(Tunable.Com1), _sim.Sent.Single());
     }
 
+    private (string Active, string Standby) UpperRow => (_panel.Shown.UpperLeft, _panel.Shown.UpperRight);
+
+    [Fact]
+    public void A_swap_shows_at_once_and_rides_out_a_radio_that_swaps_in_two_steps()
+    {
+        Press(PanelRow.Upper, TimeSpan.FromMilliseconds(100));
+        Assert.Equal(("21.500", "18.000"), UpperRow); // before the sim has swapped
+
+        _sim.Report(Cockpit with { Com1 = new RadioPair(118_000, 118_000) }); // REP's KX165 writes the standby first...
+        Assert.Equal(("21.500", "18.000"), UpperRow);
+        _sim.Report(Cockpit with { Com1 = new RadioPair(121_500, 118_000) }); // ...and the active a frame later
+        Assert.Equal(("21.500", "18.000"), UpperRow);
+
+        _sim.Report(Cockpit with { Com1 = new RadioPair(124_000, 118_000) }); // confirmed: the sim decides again
+        Assert.Equal(("24.000", "18.000"), UpperRow);
+    }
+
+    [Fact]
+    public void A_radio_that_does_not_swap_is_shown_truthfully_after_the_hold_off()
+    {
+        Press(PanelRow.Upper, TimeSpan.FromMilliseconds(100));
+        Assert.Equal(("21.500", "18.000"), UpperRow);
+
+        _time.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(("18.000", "21.500"), UpperRow);
+    }
+
+    [Fact]
+    public void A_standby_value_tuned_just_before_the_press_is_the_one_swapped_in()
+    {
+        _panel.Raise(new KnobTurned(PanelRow.Upper, Knob.Inner, 1)); // 121.505, not yet confirmed by the sim
+
+        Press(PanelRow.Upper, TimeSpan.FromMilliseconds(100));
+
+        Assert.Equal(("21.505", "18.000"), UpperRow);
+        Assert.Equal(new SwapRadio(Tunable.Com1), _sim.Sent[^1]);
+    }
+
     [Fact]
     public void Long_press_on_com_toggles_spacing_and_flashes_it()
     {

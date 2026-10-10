@@ -2,7 +2,7 @@
 
 | Layer | Project | What it proves | Run by |
 |---|---|---|---|
-| Unit | `tests/RadioBridge.Tests` | Protocol encoding and decoding, 8.33 kHz math, formatting, squawk pairs, the controller (on a fake clock), knob and button activity, the sim router and test mode, and the X-Plane backend against the emulator | `mise run ci` |
+| Unit | `tests/RadioBridge.Tests` | Protocol encoding and decoding, 8.33 kHz math, formatting, squawk pairs, the altimeter values truncating cockpits show, the controller (on a fake clock), knob and button activity, the sim router and test mode, the debug recording and its watch list, and the X-Plane backend against the emulator | `mise run ci` |
 | UI | `tests/RadioBridge.UiTests` | The readme and notices window with real text layout and simulated clicks (no screen needed): Markdown renders, a click on a link follows it, a drag across one doesn't, tabs switch, "Don't show again" appears only at start | `mise run ci` (`mise run test:ui`) |
 | Emulator | `tests/RadioBridge.FakeXPlane` | Not a test itself: an emulation of X-Plane's Web API and radios, used by both test layers | |
 | Functional | `tests/RadioBridge.FunctionalTests` | The built app, run as its own process and driven end to end, against the emulator or a live simulator | `mise run ci` |
@@ -75,7 +75,8 @@ there first when a scenario fails. The failure message also includes the last di
 - The displays show the simulator's radios, and the display report matches the text.
 - The inner knob steps COM1 standby through 8.33 kHz channels, skipping unused channel names.
 - The outer knob changes whole MHz and wraps at the band edge.
-- ACT/STBY swaps active and standby.
+- ACT/STBY swaps active and standby, also on radios that swap only when the press ends, like REP's
+  KX165 in the SF-260 (emulator only).
 - A fast spin accelerates, and afterwards the panel and the simulator agree.
 - A change made in the cockpit shows on the panel.
 - A 25 kHz-only radio that snaps an 8.33 step back is shown truthfully, and a long press fixes the
@@ -91,6 +92,9 @@ there first when a scenario fails. The failure message also includes the last di
 - The app survives the simulator quitting and restarting (emulator only).
 - An X-Plane that refuses connections is explained in a notice, which goes away once it is fixed
   (emulator only).
+- A debug recording of a knob turn and two swaps holds the whole story: the panel input, the
+  controller's decisions, the displays, what went to the simulator and its replies, the values that
+  came back by name, and the log.
 
 The MSFS side is covered by unit tests (the library search order on a pretend machine, and the
 notices) and by `mise run functional:msfs` against a live sim. The latter **changes the aircraft's
@@ -109,6 +113,7 @@ is meant for testing and tooling, and has no authentication.
 | `POST /api/panel/report` | `{"bits": 1}` | Feeds one 24-bit input report into the virtual panel and returns the decoded events |
 | `GET /api/settings` | | Current settings |
 | `PUT /api/settings` | settings object | Replaces the settings |
+| `POST /api/recording` | `{"on": true}` | Starts (or with `false` stops) the debug recording; returns whether it runs, its file and size. `GET /api/state` includes the same. |
 | `POST /api/shutdown` | | Exits the app |
 
 To try it by hand, start the emulator and the app in two terminals, then select COM1 on the upper
@@ -146,15 +151,20 @@ it clears the knob bit again, so the next detent is a new rising edge.
 `XPlaneEmulator` implements the subset of the X-Plane 12 Web API (v2) that radio tools use:
 
 - `/api/capabilities`
-- dataref and command lookup with `filter[name]`
+- dataref and command lookup with `filter[name]`, and the full dataref list
 - dataref `GET` and `PATCH`, and command activation
-- the WebSocket with subscribe, set and command messages, and pushes of changed values every 100 ms
+- the WebSocket with subscribe, unsubscribe, set and command messages (held for a `duration`, or begun
+  and ended separately), and pushes of changed values every 100 ms
 
 Behind the API is a small radio model. COM radios snap to 8.33 or 25 kHz channels
 (`Com833Capable`), the `_833` and 10 kHz COM datarefs stay in sync, the flip commands swap, and
-`barometer_2992` sets 29.92125 like the real thing. It defines its own dataref names from X-Plane's `DataRefs.txt` instead of
-sharing RadioBridge's, so a wrong name on either side makes a test fail.
+`barometer_2992` sets 29.92125 like the real thing. With `FlipOnRelease` the radios behave like REP's
+KX165: they swap when a held flip command is released, and ignore a press shorter than a frame.
+`AddDataref` adds datarefs such as an add-on's, for the recording's watch list. It defines its own
+dataref names from X-Plane's `DataRefs.txt` instead of sharing RadioBridge's, so a wrong name on
+either side makes a test fail.
 
 Run it on its own with `mise run emulator`, which listens on port 8086 like X-Plane. Add `--com25` for
-25 kHz-only radios, `--refuse` to act like X-Plane with "Disable incoming traffic" on (to see the
-window's notice banner), or `--api1` to act like an X-Plane too old for Web API v2.
+25 kHz-only radios, `--flip-on-release` for REP-style radios, `--refuse` to act like X-Plane with
+"Disable incoming traffic" on (to see the window's notice banner), or `--api1` to act like an X-Plane
+too old for Web API v2.

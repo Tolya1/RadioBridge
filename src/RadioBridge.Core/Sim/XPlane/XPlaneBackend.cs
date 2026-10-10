@@ -1,12 +1,15 @@
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Net.WebSockets;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using RadioBridge.Core.Diagnostics;
 
 namespace RadioBridge.Core.Sim.XPlane;
 
@@ -21,8 +24,19 @@ public sealed class XPlaneBackend : ISimBackend
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan UnsupportedRetryDelay = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// How long a command (XFER) is held down. Like a quick click on the cockpit button: some aircraft act
+    /// only when a command is released after being held for at least a frame (REP's Bendix King KX165 in
+    /// the SF-260, for one), and ignore a press that starts and ends in the same frame. 50 ms was enough at
+    /// a normal frame rate; this leaves room for a slow one.
+    /// </summary>
+    internal const double PressSeconds = 0.15;
+
+    private const string AircraftPath = "sim/aircraft/view/acf_relative_path";
+
     private readonly Func<int> _port;
     private readonly ILogger _log;
+    private readonly Recorder _recorder;
     private readonly CancellationTokenSource _cts = new();
     private Task? _loop;
     private volatile Session? _session;
@@ -33,10 +47,13 @@ public sealed class XPlaneBackend : ISimBackend
     private bool _warnedUnsupported;
 
     /// <param name="port">Web API port, read on every connection attempt (X-Plane's default is 8086).</param>
-    public XPlaneBackend(Func<int> port, ILogger<XPlaneBackend>? log = null)
+    /// <param name="recorder">The debug recording; while it runs, this also watches the aircraft's radio datarefs.</param>
+    public XPlaneBackend(Func<int> port, ILogger<XPlaneBackend>? log = null, Recorder? recorder = null)
     {
         _port = port;
         _log = log ?? NullLogger<XPlaneBackend>.Instance;
+        _recorder = recorder ?? new Recorder();
+        _recorder.Changed += OnRecordingChanged;
     }
 
     public string Name => "X-Plane";
@@ -80,7 +97,7 @@ public sealed class XPlaneBackend : ISimBackend
                 SetDataref(session, XPlaneNames.Baro, XPlaneNames.BaroRaw(c.Hpa));
                 break;
             case SetBaroStandard:
-                SetDataref(session, XPlaneNames.Baro, XPlaneNames.StandardBaro);
+                SetDataref(session, XPlaneNames.Baro, XPlaneNames.StandardBaroRaw);
                 break;
         }
     }
@@ -162,24 +179,25 @@ public sealed class XPlaneBackend : ISimBackend
         using var socket = new ClientWebSocket();
         await socket.ConnectAsync(new Uri($"ws://{host}:{port}/api/v2"), ct);
 
-        var session = new Session(socket, datarefs, commands);
-        session.Outbox.Writer.TryWrite(BuildMessage("dataref_subscribe_values", "datarefs", w =>
-        {
-            foreach (long id in datarefs.Values)
-            {
-                w.WriteStartObject();
-                w.WriteNumber("id", id);
-                w.WriteEndObject();
-            }
-        }));
-
         using var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var session = new Session(socket, http, datarefs, commands, sessionCts.Token);
+        Subscribe(session, datarefs.Values);
+
         var sender = SendLoopAsync(session, sessionCts.Token);
         _session = session;
         _warnedForbidden = false; // warn again should it ever be refused again
         _warnedUnsupported = false;
         Volatile.Write(ref _notice, null); // announced by the Changed below
         _log.LogInformation("Connected to X-Plane {Version} (Web API port {Port}).", version, port);
+        _recorder.Record("xplane", "connected", w =>
+        {
+            w.WriteString("version", version);
+            w.WriteString("address", $"{host}:{port}");
+            WriteIds(w, "datarefs", datarefs);
+            WriteIds(w, "commands", commands);
+        });
+        if (_recorder.IsRecording)
+            _ = UpdateWatchAsync(session);
         Changed?.Invoke();
 
         try
@@ -193,10 +211,95 @@ public sealed class XPlaneBackend : ISimBackend
             _state = RadioState.Empty;
             await sessionCts.CancelAsync();
             try { await sender; } catch (Exception) { /* the socket is gone anyway */ }
+            _recorder.Record("xplane", "disconnected");
             Changed?.Invoke();
         }
 
         return RetryDelay;
+    }
+
+    private static void WriteIds(Utf8JsonWriter w, string name, IReadOnlyDictionary<string, long> ids)
+    {
+        w.WriteStartObject(name);
+        foreach (var (key, id) in ids)
+            w.WriteNumber(key, id);
+        w.WriteEndObject();
+    }
+
+    private void Subscribe(Session session, IEnumerable<long> ids, bool subscribe = true) =>
+        session.Outbox.Writer.TryWrite(BuildMessage(subscribe ? "dataref_subscribe_values" : "dataref_unsubscribe_values", "datarefs", w =>
+        {
+            foreach (long id in ids)
+            {
+                w.WriteStartObject();
+                w.WriteNumber("id", id);
+                w.WriteEndObject();
+            }
+        }));
+
+    private void OnRecordingChanged()
+    {
+        if (_session is { } session)
+            _ = UpdateWatchAsync(session);
+    }
+
+    /// <summary>
+    /// While recording, also subscribes to the aircraft's radio datarefs (<see cref="XPlaneWatchList"/>);
+    /// otherwise drops them. <paramref name="rescan"/> looks for them again, after another aircraft was loaded.
+    /// </summary>
+    private async Task UpdateWatchAsync(Session session, bool rescan = false)
+    {
+        try
+        {
+            await session.WatchGate.WaitAsync(session.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        try
+        {
+            bool want = _recorder.IsRecording;
+            if (!session.Watch.IsEmpty && (!want || rescan))
+            {
+                Subscribe(session, session.Watch.Keys.ToList(), subscribe: false);
+                session.Watch.Clear();
+            }
+            if (!want || !session.Watch.IsEmpty)
+                return;
+
+            using var response = await session.Http.GetAsync("v2/datarefs", session.Token);
+            response.EnsureSuccessStatusCode();
+            using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(session.Token), cancellationToken: session.Token);
+            var all = doc.RootElement.GetProperty("data").EnumerateArray()
+                .Select(d => (Id: d.GetProperty("id").GetInt64(), Name: d.GetProperty("name").GetString() ?? "",
+                    Type: d.TryGetProperty("value_type", out var t) ? t.GetString() ?? "" : ""))
+                .ToList();
+            var wanted = XPlaneWatchList.Select(all.Select(d => (d.Name, d.Type)), session.DatarefIds.Keys).ToHashSet(StringComparer.Ordinal);
+            foreach (var d in all.Where(d => wanted.Contains(d.Name)))
+                session.Watch[d.Id] = new Watched(d.Name, d.Type);
+
+            _recorder.Record("xplane", "watching", w =>
+            {
+                w.WriteNumber("count", session.Watch.Count);
+                w.WriteNumber("of", all.Count);
+                w.WriteStartObject("datarefs");
+                foreach (var (id, watched) in session.Watch.OrderBy(p => p.Value.Name, StringComparer.Ordinal))
+                    w.WriteString(watched.Name, watched.Type);
+                w.WriteEndObject();
+            });
+            if (!session.Watch.IsEmpty)
+                Subscribe(session, session.Watch.Keys.ToList());
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or IOException or OperationCanceledException or InvalidOperationException or KeyNotFoundException)
+        {
+            if (!session.Token.IsCancellationRequested)
+                _log.LogDebug(ex, "Could not set up the recording's extra datarefs.");
+        }
+        finally
+        {
+            session.WatchGate.Release();
+        }
     }
 
     /// <summary>
@@ -309,8 +412,9 @@ public sealed class XPlaneBackend : ISimBackend
         switch (root.TryGetProperty("type", out var type) ? type.GetString() : null)
         {
             case "dataref_update_values":
+                var data = root.GetProperty("data");
                 var state = _state;
-                foreach (var value in root.GetProperty("data").EnumerateObject())
+                foreach (var value in data.EnumerateObject())
                 {
                     if (value.Value.ValueKind == JsonValueKind.Number
                         && long.TryParse(value.Name, out long id)
@@ -320,15 +424,89 @@ public sealed class XPlaneBackend : ISimBackend
                     }
                 }
                 _state = state;
+                if (_recorder.IsRecording)
+                    RecordValues(session, data);
                 Changed?.Invoke();
                 break;
 
-            case "result" when root.TryGetProperty("success", out var ok) && ok.ValueKind == JsonValueKind.False:
-                _log.LogWarning("X-Plane rejected request {Id}: {Code} {Message}",
-                    root.TryGetProperty("req_id", out var req) ? req.ToString() : "?",
-                    root.TryGetProperty("error_code", out var code) ? code.GetString() : "?",
-                    root.TryGetProperty("error_message", out var msg) ? msg.GetString() : "");
+            case "result":
+                bool success = !root.TryGetProperty("success", out var ok) || ok.ValueKind != JsonValueKind.False;
+                string request = root.TryGetProperty("req_id", out var req) ? req.ToString() : "?";
+                string? error = root.TryGetProperty("error_code", out var code) ? code.GetString() : null;
+                string? message = root.TryGetProperty("error_message", out var msg) ? msg.GetString() : null;
+                if (!success)
+                    _log.LogWarning("X-Plane rejected request {Id}: {Code} {Message}", request, error ?? "?", message ?? "");
+                _recorder.Record("xplane", "result", w =>
+                {
+                    w.WriteString("req", request);
+                    w.WriteBoolean("success", success);
+                    if (!success)
+                    {
+                        w.WriteString("error", error);
+                        w.WriteString("message", message);
+                    }
+                });
                 break;
+        }
+    }
+
+    /// <summary>Records pushed values by dataref name; byte data (the aircraft's path and name) as text.</summary>
+    private void RecordValues(Session session, JsonElement data)
+    {
+        string? aircraft = null;
+        _recorder.Record("xplane", "values", w =>
+        {
+            w.WriteStartObject("values");
+            foreach (var value in data.EnumerateObject())
+            {
+                long.TryParse(value.Name, out long id);
+                if (session.DatarefNames.TryGetValue(id, out var name))
+                {
+                    w.WritePropertyName(name);
+                    value.Value.WriteTo(w);
+                }
+                else if (session.Watch.TryGetValue(id, out var watched))
+                {
+                    w.WritePropertyName(watched.Name);
+                    if (watched.Type == "data" && value.Value.ValueKind == JsonValueKind.String)
+                    {
+                        string text = DecodeData(value.Value.GetString());
+                        w.WriteStringValue(text);
+                        if (watched.Name == AircraftPath)
+                            aircraft = text;
+                    }
+                    else
+                    {
+                        value.Value.WriteTo(w);
+                    }
+                }
+                else
+                {
+                    w.WritePropertyName("id:" + value.Name);
+                    value.Value.WriteTo(w);
+                }
+            }
+            w.WriteEndObject();
+        });
+
+        // Another aircraft brings other add-on datarefs: look for them again.
+        if (aircraft is not null)
+        {
+            string? before = Interlocked.Exchange(ref session.Aircraft, aircraft);
+            if (before is not null && before != aircraft)
+                _ = UpdateWatchAsync(session, rescan: true);
+        }
+    }
+
+    private static string DecodeData(string? base64)
+    {
+        try
+        {
+            return Encoding.UTF8.GetString(Convert.FromBase64String(base64 ?? "")).TrimEnd('\0');
+        }
+        catch (FormatException)
+        {
+            return base64 ?? "";
         }
     }
 
@@ -341,6 +519,7 @@ public sealed class XPlaneBackend : ISimBackend
             return;
         }
         _log.LogDebug("X-Plane <- {Name} = {Value}", name, value);
+        int request = 0;
         session.Outbox.Writer.TryWrite(BuildMessage("dataref_set_values", "datarefs", w =>
         {
             w.WriteStartObject();
@@ -350,7 +529,13 @@ public sealed class XPlaneBackend : ISimBackend
             else
                 w.WriteNumber("value", value);
             w.WriteEndObject();
-        }));
+        }, id => request = id));
+        _recorder.Record("xplane", "set", w =>
+        {
+            w.WriteNumber("req", request);
+            w.WriteString("dataref", name);
+            w.WriteNumber("value", value);
+        });
     }
 
     private void RunCommand(Session session, string name)
@@ -361,23 +546,32 @@ public sealed class XPlaneBackend : ISimBackend
             return;
         }
         _log.LogDebug("X-Plane <- command {Name}", name);
+        int request = 0;
         session.Outbox.Writer.TryWrite(BuildMessage("command_set_is_active", "commands", w =>
         {
             w.WriteStartObject();
             w.WriteNumber("id", id);
             w.WriteBoolean("is_active", true);
-            w.WriteNumber("duration", 0); // press and release
+            w.WriteNumber("duration", PressSeconds); // X-Plane releases it after this long
             w.WriteEndObject();
-        }));
+        }, id => request = id));
+        _recorder.Record("xplane", "command", w =>
+        {
+            w.WriteNumber("req", request);
+            w.WriteString("command", name);
+            w.WriteNumber("pressSeconds", PressSeconds);
+        });
     }
 
-    private byte[] BuildMessage(string type, string listName, Action<Utf8JsonWriter> writeItems)
+    private byte[] BuildMessage(string type, string listName, Action<Utf8JsonWriter> writeItems, Action<int>? requestId = null)
     {
         var buffer = new ArrayBufferWriter<byte>();
         using (var w = new Utf8JsonWriter(buffer))
         {
+            int id = Interlocked.Increment(ref _requestId);
+            requestId?.Invoke(id);
             w.WriteStartObject();
-            w.WriteNumber("req_id", Interlocked.Increment(ref _requestId));
+            w.WriteNumber("req_id", id);
             w.WriteString("type", type);
             w.WriteStartObject("params");
             w.WriteStartArray(listName);
@@ -391,17 +585,32 @@ public sealed class XPlaneBackend : ISimBackend
 
     public void Dispose()
     {
+        _recorder.Changed -= OnRecordingChanged;
         _cts.Cancel();
         try { _loop?.Wait(TimeSpan.FromSeconds(2)); } catch (AggregateException) { }
         _cts.Dispose();
     }
 
-    private sealed class Session(ClientWebSocket socket, Dictionary<string, long> datarefIds, Dictionary<string, long> commandIds)
+    private sealed record Watched(string Name, string Type);
+
+    private sealed class Session(ClientWebSocket socket, HttpClient http, Dictionary<string, long> datarefIds,
+        Dictionary<string, long> commandIds, CancellationToken token)
     {
         public ClientWebSocket Socket { get; } = socket;
+        public HttpClient Http { get; } = http;
         public IReadOnlyDictionary<string, long> DatarefIds { get; } = datarefIds;
         public IReadOnlyDictionary<long, string> DatarefNames { get; } = datarefIds.ToDictionary(p => p.Value, p => p.Key);
         public IReadOnlyDictionary<string, long> CommandIds { get; } = commandIds;
         public Channel<byte[]> Outbox { get; } = Channel.CreateUnbounded<byte[]>(new UnboundedChannelOptions { SingleReader = true });
+
+        /// <summary>Ends with the connection.</summary>
+        public CancellationToken Token { get; } = token;
+
+        /// <summary>The extra datarefs a recording watches, by id.</summary>
+        public ConcurrentDictionary<long, Watched> Watch { get; } = new();
+        public SemaphoreSlim WatchGate { get; } = new(1, 1);
+
+        /// <summary>The loaded aircraft's path, once a recording has seen it.</summary>
+        public string? Aircraft;
     }
 }

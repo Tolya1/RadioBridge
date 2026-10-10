@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using RadioBridge.Core.Diagnostics;
 using RadioBridge.Core.Radio;
 using static RadioBridge.Core.Sim.Msfs.SimConnectNative;
 
@@ -66,6 +67,7 @@ public sealed class MsfsBackend : ISimBackend
     private const uint RequestRadios = 0;
 
     private readonly ILogger _log;
+    private readonly Recorder _recorder;
     private readonly Func<string?> _configuredPath;
     private readonly ILocatorEnvironment _environment;
     private readonly ConcurrentQueue<(Ev Event, uint Data)> _outbox = new();
@@ -78,11 +80,13 @@ public sealed class MsfsBackend : ISimBackend
 
     /// <param name="configuredPath">The SimConnect library chosen in the settings, read on every attempt (null = automatic).</param>
     /// <param name="environment">The machine to search; the real one unless a test supplies another.</param>
-    public MsfsBackend(Func<string?>? configuredPath = null, ILocatorEnvironment? environment = null, ILogger<MsfsBackend>? log = null)
+    public MsfsBackend(Func<string?>? configuredPath = null, ILocatorEnvironment? environment = null, ILogger<MsfsBackend>? log = null,
+        Recorder? recorder = null)
     {
         _configuredPath = configuredPath ?? (() => null);
         _environment = environment ?? new MachineEnvironment();
         _log = log ?? NullLogger<MsfsBackend>.Instance;
+        _recorder = recorder ?? new Recorder();
     }
 
     public string Name => "MSFS";
@@ -270,21 +274,26 @@ public sealed class MsfsBackend : ISimBackend
                     case RecvOpen:
                         _connected = true;
                         _log.LogInformation("Connected to MSFS.");
+                        _recorder.Record("msfs", "connected", w => w.WriteString("library", LoadedPath));
                         Changed?.Invoke();
                         break;
 
                     case RecvQuit:
                         _log.LogInformation("MSFS closed the connection.");
+                        _recorder.Record("msfs", "quit");
                         open = false;
                         break;
 
                     case RecvException:
-                        _log.LogDebug("SimConnect exception {Code}.", Marshal.ReadInt32(data, ExceptionCodeOffset));
+                        int code = Marshal.ReadInt32(data, ExceptionCodeOffset);
+                        _log.LogDebug("SimConnect exception {Code}.", code);
+                        _recorder.Record("msfs", "exception", w => w.WriteNumber("code", code));
                         break;
 
                     case RecvSimObjectData when (uint)Marshal.ReadInt32(data, SimObjectRequestIdOffset) == RequestRadios:
                         Marshal.Copy(IntPtr.Add(data, SimObjectDataOffset), values, 0, values.Length);
                         _state = ToState(values);
+                        RecordValues(values);
                         Changed?.Invoke();
                         break;
                 }
@@ -297,10 +306,27 @@ public sealed class MsfsBackend : ISimBackend
             {
                 _log.LogDebug("MSFS <- {Event} {Data}", EventNames[message.Event], message.Data);
                 TransmitClientEvent(handle, ObjectIdUser, (uint)message.Event, message.Data, GroupPriorityHighest, EventFlagGroupIdIsPriority);
+                _recorder.Record("msfs", "event", w =>
+                {
+                    w.WriteString("event", EventNames[message.Event]);
+                    w.WriteNumber("data", message.Data);
+                });
             }
 
             ct.WaitHandle.WaitOne(15);
         }
+    }
+
+    /// <summary>Records the SimVars as MSFS sent them, by name, before any conversion.</summary>
+    private void RecordValues(double[] values)
+    {
+        _recorder.Record("msfs", "values", w =>
+        {
+            w.WriteStartObject("values");
+            for (int i = 0; i < Variables.Length; i++)
+                w.WriteNumberOrNull(Variables[i].Name, values[i]);
+            w.WriteEndObject();
+        });
     }
 
     internal static RadioState ToState(double[] v) => new()

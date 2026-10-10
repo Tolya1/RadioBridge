@@ -117,29 +117,60 @@ public class DisplayFormatTests
     public void Dme(double nm, string expected) => Assert.Equal(expected, DisplayFormat.Dme(nm));
 }
 
+/// <summary>
+/// What cockpits show for the altimeter settings RadioBridge writes. X-Plane keeps the setting in a 32-bit
+/// float, and some cockpits cut digits off instead of rounding: the Thranda PC-6's altimeter draws
+/// floor(inHg × 33.864) in hPa and floor(inHg × 100) in inHg. Every setting has to survive both.
+/// </summary>
 public class XPlaneBaroValueTests
 {
-    [Theory]
-    [InlineData(1040, 30.71)]
-    [InlineData(1041, 30.74)]
-    [InlineData(1042, 30.77)]
-    [InlineData(1013.25, 29.92)]
-    [InlineData(1000, 29.53)]
-    public void Whole_hpa_becomes_the_nearest_hundredth_of_an_inch(double hpa, double expected) =>
-        Assert.Equal(expected, RadioBridge.Core.Sim.XPlane.XPlaneNames.BaroRaw(hpa), 10);
+    private static float Stored(double hpa) => (float)RadioBridge.Core.Sim.XPlane.XPlaneNames.BaroRaw(hpa);
 
     [Fact]
-    public void Every_hpa_in_the_range_is_a_valid_setting_that_reads_back_as_itself_without_stalling()
+    public void Every_hpa_setting_shows_as_itself_on_truncating_and_rounding_altimeters()
     {
-        double previous = 0;
         for (int hpa = 900; hpa <= 1100; hpa++)
         {
-            double inHg = RadioBridge.Core.Sim.XPlane.XPlaneNames.BaroRaw(hpa);
-
-            Assert.True(Math.Abs(inHg * 100 - Math.Round(inHg * 100)) < 1e-9, $"{hpa} hPa -> {inHg} isn't in hundredths");
-            Assert.Equal(hpa, (int)Math.Round(inHg * DisplayFormat.HpaPerInHg)); // the display reads the same hPa back
-            Assert.True(inHg > previous, $"{hpa} hPa doesn't move the setting");   // each hPa step changes the value
-            previous = inHg;
+            double inHg = Stored(hpa);
+            Assert.Equal(hpa, (int)Math.Floor(inHg * 33.864));                  // Thranda PC-6, hPa
+            Assert.Equal(hpa, (int)Math.Floor(inHg * DisplayFormat.HpaPerInHg)); // X-Plane's own conversion, truncated
+            Assert.Equal(hpa, (int)Math.Round(inHg * DisplayFormat.HpaPerInHg)); // ...and rounded
         }
+    }
+
+    [Fact]
+    public void Every_inhg_setting_shows_as_itself_on_truncating_and_rounding_altimeters()
+    {
+        for (int hundredths = 2658; hundredths <= 3248; hundredths++)
+        {
+            double inHg = Stored(hundredths / 100.0 * DisplayFormat.HpaPerInHg); // how the inHg knob asks for it
+            Assert.Equal(hundredths, (int)Math.Floor(inHg * 100));              // Thranda PC-6, inHg
+            Assert.Equal(hundredths, (int)Math.Round(inHg * 100));
+        }
+    }
+
+    [Fact]
+    public void Without_the_margin_a_truncating_altimeter_shows_some_settings_one_step_low()
+    {
+        // Why the margin exists: 29.91 inHg is stored as 29.9099998 and the PC-6 shows 29.90.
+        Assert.Equal(2990, (int)Math.Floor((float)29.91 * 100.0));
+        // And rounding hPa to two inHg decimals, as 0.1.1 did, showed 1013 hPa as 1012.
+        Assert.Equal(1012, (int)Math.Floor((float)Math.Round(1013 / DisplayFormat.HpaPerInHg, 2) * 33.864));
+    }
+
+    [Fact]
+    public void The_margin_is_far_below_anything_an_altimeter_shows()
+    {
+        Assert.Equal(30.7112, RadioBridge.Core.Sim.XPlane.XPlaneNames.BaroRaw(1040), 0.0001); // what X-Plane's own knob stores for 1040 hPa
+        Assert.Equal(29.92, RadioBridge.Core.Sim.XPlane.XPlaneNames.StandardBaroRaw, 0.0001);
+        Assert.True(RadioBridge.Core.Sim.XPlane.XPlaneNames.BaroMarginInHg * DisplayFormat.HpaPerInHg < 0.002); // hPa
+    }
+
+    [Fact]
+    public void Standard_pressure_shows_as_2992_and_1013()
+    {
+        float inHg = (float)RadioBridge.Core.Sim.XPlane.XPlaneNames.StandardBaroRaw;
+        Assert.Equal(2992, (int)Math.Floor(inHg * 100.0));
+        Assert.Equal(1013, (int)Math.Floor(inHg * 33.864));
     }
 }

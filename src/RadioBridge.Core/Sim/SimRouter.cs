@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using RadioBridge.Core.Diagnostics;
 
 namespace RadioBridge.Core.Sim;
 
@@ -13,15 +14,18 @@ public sealed class SimRouter : ISimBackend
     private readonly IReadOnlyList<ISimBackend> _backends;
     private readonly ISimBackend? _fallback;
     private readonly ILogger _log;
+    private readonly Recorder _recorder;
     private readonly object _gate = new();
     private ISimBackend? _active;
     private SimNotice? _lastNotice;
+    private RadioState? _recordedState;
 
-    public SimRouter(IEnumerable<ISimBackend> backends, ISimBackend? fallback = null, ILogger<SimRouter>? log = null)
+    public SimRouter(IEnumerable<ISimBackend> backends, ISimBackend? fallback = null, ILogger<SimRouter>? log = null, Recorder? recorder = null)
     {
         _backends = backends.ToList();
         _fallback = fallback;
         _log = log ?? NullLogger<SimRouter>.Instance;
+        _recorder = recorder ?? new Recorder();
         foreach (var backend in All)
             backend.Changed += () => OnBackendChanged(backend);
     }
@@ -75,6 +79,7 @@ public sealed class SimRouter : ISimBackend
             var notice = Notice;
             noticeChanged = notice != _lastNotice;
             _lastNotice = notice;
+            RecordLocked(before, after, noticeChanged ? notice : null);
         }
 
         if (before != after)
@@ -83,6 +88,26 @@ public sealed class SimRouter : ISimBackend
         // Other sims' value updates are irrelevant while they are not the active one.
         if (before != after || backend == after || noticeChanged)
             Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Records which simulator is followed and the radio values as RadioBridge understands them (after converting
+    /// from the sim's units), whenever they change.
+    /// </summary>
+    private void RecordLocked(ISimBackend? before, ISimBackend? after, SimNotice? newNotice)
+    {
+        if (!_recorder.IsRecording)
+            return;
+        if (before != after)
+            _recorder.Record("sim", "active", w => w.WriteString("name", after?.Name));
+        if (newNotice is not null)
+            _recorder.Record("sim", "notice", w => w.WriteString("text", newNotice.Text));
+        var state = after?.State ?? RadioState.Empty;
+        if (state != _recordedState)
+        {
+            _recordedState = state;
+            _recorder.Record("sim", "state", w => w.WriteRadioState("radios", state));
+        }
     }
 
     private ISimBackend? Choose()
