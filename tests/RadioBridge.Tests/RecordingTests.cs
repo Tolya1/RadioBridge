@@ -127,6 +127,30 @@ public sealed class RecorderTests : IDisposable
     }
 
     [Fact]
+    public void Only_the_newest_recordings_are_kept_and_nothing_else_in_the_folder_is_touched()
+    {
+        Directory.CreateDirectory(_folder.Path);
+        var start = DateTime.UtcNow.AddDays(-1);
+        for (int i = 0; i < 6; i++)
+        {
+            string old = Path.Combine(_folder.Path, $"radiobridge-old{i}.jsonl");
+            File.WriteAllText(old, "{}\n");
+            File.SetLastWriteTimeUtc(old, start.AddMinutes(i)); // old5 is the newest
+        }
+        string notes = Path.Combine(_folder.Path, "notes.txt");
+        File.WriteAllText(notes, "mine");
+
+        using var recorder = new Recorder(keepFiles: 4);
+        string file = recorder.Start(_folder.Path);
+        recorder.Stop();
+
+        var kept = Directory.GetFiles(_folder.Path, "radiobridge-*.jsonl").Select(Path.GetFileName).Order().ToList();
+        Assert.Equal(new[] { Path.GetFileName(file), "radiobridge-old3.jsonl", "radiobridge-old4.jsonl", "radiobridge-old5.jsonl" }.Order(), kept);
+        Assert.True(File.Exists(notes));
+        Assert.Equal(3, TempFolder.ReadEvents(file)[0].GetProperty("removedOldRecordings").GetInt32());
+    }
+
+    [Fact]
     public void Log_messages_are_copied_into_the_recording_only_while_it_runs()
     {
         using var recorder = new Recorder();

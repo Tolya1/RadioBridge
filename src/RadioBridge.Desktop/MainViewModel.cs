@@ -223,6 +223,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public string RecordingDirectory => _host.RecordingDirectory;
 
+    public bool RecordAtStart
+    {
+        get => S.RecordAtStart;
+        set => Update(s => s with { RecordAtStart = value });
+    }
+
     public void ToggleRecording()
     {
         if (IsRecording)

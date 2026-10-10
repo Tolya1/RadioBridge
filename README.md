@@ -225,6 +225,7 @@ Settings are in the window and are saved immediately to `settings.json` in the d
 | `ShowReaderAtStart` | `true` | Open the readme and notices window when RadioBridge starts ("Don't show again" clears it) |
 | `CloseToTray` | `false` | Closing the window keeps RadioBridge running in the tray |
 | `StartInTray` | `false` | Start hidden in the tray (minimized if `CloseToTray` is off) |
+| `RecordAtStart` | `false` | Start a [debug recording](#reporting-a-problem) every time RadioBridge starts |
 | `MsfsEnabled`, `XPlaneEnabled` | `true` | Which simulators to look for (applied on restart) |
 | `SimConnectPath` | none | A SimConnect library for MSFS (a file or a folder), when the automatic search isn't enough |
 | `XPlanePort` | `8086` | X-Plane Web API port (applied on reconnect) |
@@ -276,8 +277,9 @@ Logs are in the `logs` folder in the data folder (one file per day, the last 7 k
 
 When the panel does something odd, a **debug recording** shows exactly what happened:
 
-1. Click **Record debug log** in the window (or use the tray menu, or start RadioBridge with
-   `--record` to include the start).
+1. Click **Record debug log** in the window (or use the tray menu). If the problem shows up right
+   after starting, tick **Settings › Debug › Record a debug log every time RadioBridge starts** (or
+   start it once with `--record`), and untick it when you're done.
 2. Do what goes wrong: turn the knob, press ACT/STBY, wait until the values misbehave.
 3. Click **Stop recording**, then **Open folder**, and attach the newest file to your report
    ([GitHub issues](https://github.com/Tolya1/RadioBridge/issues)). Zip it if it is big.
@@ -291,7 +293,8 @@ datarefs show what the cockpit really does. RadioBridge's log lines and settings
 
 It stays on your computer (in the `recordings` folder in the data folder) until you send it. It holds
 no personal data beyond your user name in file paths and the version of your operating system.
-A recording stops by itself at 200 MB.
+A recording stops by itself at 200 MB, and the folder keeps the newest 20 recordings, so a recording
+setting left on can't fill the disk.
 
 The file is [JSON Lines](https://jsonlines.org): one event per line, each with `ms` (milliseconds since
 the recording started), `t` (the time of day), `src` (`panel`, `controller`, `sim`, `xplane`, `msfs`,

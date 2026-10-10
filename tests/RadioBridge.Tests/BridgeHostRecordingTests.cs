@@ -37,4 +37,34 @@ public sealed class BridgeHostRecordingTests : IDisposable
         Assert.Equal(7000, changed.GetProperty("settings").GetProperty("vfrSquawk").GetInt32());
         Assert.Equal("stop", events[^1].GetProperty("ev").GetString());
     }
+
+    private BridgeHost Host(string settingsJson)
+    {
+        Directory.CreateDirectory(_data.Path);
+        File.WriteAllText(Path.Combine(_data.Path, "settings.json"), settingsJson);
+        return new BridgeHost(new BridgeOptions { DataDirectory = _data.Path, UsePhysicalPanel = false }, NullLoggerFactory.Instance, () => { });
+    }
+
+    [Fact]
+    public void The_record_at_start_setting_starts_a_recording()
+    {
+        using var host = Host("""{ "MsfsEnabled": false, "XPlaneEnabled": false, "RecordAtStart": true }""");
+
+        host.Start();
+
+        Assert.True(host.Recorder.IsRecording);
+    }
+
+    [Fact]
+    public void Nothing_is_recorded_by_default()
+    {
+        using (var host = Host("""{ "MsfsEnabled": false, "XPlaneEnabled": false }"""))
+        {
+            Assert.False(host.Settings.Current.RecordAtStart);
+            host.Start();
+            Assert.False(host.Recorder.IsRecording);
+        }
+
+        Assert.False(Directory.Exists(Path.Combine(_data.Path, "recordings")));
+    }
 }

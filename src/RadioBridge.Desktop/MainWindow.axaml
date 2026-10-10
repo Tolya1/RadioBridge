@@ -165,6 +165,11 @@
                           Content="Drive the panel with built-in test radios while no simulator is connected" />
                 <TextBlock Classes="caption" IsVisible="{Binding TestModeForced}" Text="On for this run (started with --test-mode)." />
 
+                <TextBlock Classes="h2" Text="Debug" />
+                <CheckBox IsChecked="{Binding RecordAtStart}" Content="Record a debug log every time RadioBridge starts" />
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="For problems that show up right after starting. Leave it off otherwise: Record debug log below records on demand. The newest 20 recordings are kept." />
+
                 <TextBlock Classes="h2" Text="Simulators (applied on restart)" />
                 <StackPanel Orientation="Horizontal" Spacing="16">
                     <CheckBox IsChecked="{Binding MsfsEnabled}" Content="MSFS" />

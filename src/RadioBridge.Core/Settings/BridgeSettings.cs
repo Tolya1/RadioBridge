@@ -42,6 +42,12 @@ public sealed record BridgeSettings
     /// <summary>Start hidden in the tray (with <see cref="CloseToTray"/>) or minimized.</summary>
     public bool StartInTray { get; init; }
 
+    /// <summary>
+    /// Start a debug recording every time RadioBridge starts, for problems that show up right away. Off by
+    /// default, so nothing is recorded unless asked for; only the newest recordings are kept.
+    /// </summary>
+    public bool RecordAtStart { get; init; }
+
     // Read at startup.
     public bool MsfsEnabled { get; init; } = true;
 

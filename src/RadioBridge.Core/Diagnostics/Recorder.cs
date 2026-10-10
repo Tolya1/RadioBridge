@@ -22,14 +22,25 @@ public sealed class Recorder : IDisposable
     /// <summary>A recording stops by itself at this size, so a forgotten one can't fill the disk.</summary>
     public const long DefaultMaxBytes = 200L * 1024 * 1024;
 
+    /// <summary>Recordings kept in the folder (the newest); older ones go when a new one starts, like old logs.</summary>
+    public const int DefaultKeepFiles = 20;
+
+    private const string FilePattern = "radiobridge-*.jsonl";
+
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
     private readonly object _gate = new();
     private volatile Session? _session;
 
-    public Recorder(long maxBytes = DefaultMaxBytes) => MaxBytes = maxBytes;
+    public Recorder(long maxBytes = DefaultMaxBytes, int keepFiles = DefaultKeepFiles)
+    {
+        MaxBytes = maxBytes;
+        KeepFiles = keepFiles;
+    }
 
     public long MaxBytes { get; }
+
+    public int KeepFiles { get; }
 
     public bool IsRecording => _session is not null;
 
@@ -66,14 +77,40 @@ public sealed class Recorder : IDisposable
             session.Writer = Task.Run(() => WriteLoopAsync(session));
             _session = session;
             FilePath = path;
+            var removed = RemoveOldRecordings(directory, path);
             Record("recorder", "start", w =>
             {
                 w.WriteString("started", DateTimeOffset.Now.ToString("o", Inv));
+                if (removed > 0)
+                    w.WriteNumber("removedOldRecordings", removed);
                 header?.Invoke(w);
             });
         }
         Changed?.Invoke();
         return FilePath!;
+    }
+
+    /// <summary>Deletes all but the newest <see cref="KeepFiles"/> recordings (counting the new one).</summary>
+    private int RemoveOldRecordings(string directory, string current)
+    {
+        int removed = 0;
+        var old = new DirectoryInfo(directory).GetFiles(FilePattern)
+            .Where(f => !string.Equals(f.FullName, Path.GetFullPath(current), StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(f => f.LastWriteTimeUtc)
+            .Skip(Math.Max(0, KeepFiles - 1));
+        foreach (var file in old)
+        {
+            try
+            {
+                file.Delete();
+                removed++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Open in an editor, say: it stays, and goes next time.
+            }
+        }
+        return removed;
     }
 
     /// <summary>Stops the recording, writing everything still queued. Does nothing when not recording.</summary>

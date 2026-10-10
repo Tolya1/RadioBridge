@@ -26,7 +26,7 @@ public sealed record BridgeOptions
     /// <summary>Force test mode on for this run, whatever the settings say.</summary>
     public bool TestMode { get; init; }
 
-    /// <summary>Start a debug recording right away, so it covers the start too.</summary>
+    /// <summary>Start a debug recording right away, so it covers the start too (also the RecordAtStart setting).</summary>
     public bool Record { get; init; }
 
     public string SettingsFile => Path.Combine(DataDirectory, "settings.json");
@@ -83,7 +83,7 @@ public sealed class BridgeHost : IDisposable
 
     public void Start()
     {
-        if (_options.Record)
+        if (_options.Record || Settings.Current.RecordAtStart)
             StartRecording();
         Controller.Start();
         _automation?.Start();

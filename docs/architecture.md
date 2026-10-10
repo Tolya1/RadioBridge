@@ -224,8 +224,9 @@ aircraft loads, the list is built again. On a live SF-260 it held 314 of X-Plane
 
 `Record` does nothing while no recording runs. Otherwise it formats the line on the calling thread
 and queues it; a background task writes the queue and flushes whenever it runs dry. The file is shared
-for reading, and a recording stops by itself at 200 MB. The window, the tray, `--record` and the automation
-API (`POST /api/recording`) start and stop it.
+for reading, and a recording stops by itself at 200 MB. Starting one deletes all but the newest 20
+`radiobridge-*.jsonl` files in the folder. The window, the tray, `--record`, the `RecordAtStart` setting
+(off by default) and the automation API (`POST /api/recording`) start and stop it.
 
 ## Threads
 
