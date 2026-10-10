@@ -100,6 +100,18 @@ public sealed class HidRadioPanel : IRadioPanel
                     }
                     _decoder.Reset();
                     SetConnected(true);
+
+                    // The panel reports only on change: ask for the current selector positions.
+                    if (CurrentInputReport.TryRead(device) is { } current)
+                    {
+                        foreach (var ev in _decoder.Decode(current))
+                            Input?.Invoke(ev);
+                    }
+                    else
+                    {
+                        _log.LogInformation("Could not read the panel's current state; selector positions show after the first move.");
+                    }
+
                     ReadLoop(stream, device.GetMaxInputReportLength(), ct);
                 }
             }
