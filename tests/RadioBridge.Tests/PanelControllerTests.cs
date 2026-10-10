@@ -160,23 +160,35 @@ public sealed class PanelControllerTests : IDisposable
         Assert.Equal(new SetBaro(1014), _sim.Sent[^1]);
     }
 
-    [Fact]
-    public void Hold_on_xpdr_switches_the_altimeter_unit()
+    [Theory]
+    [InlineData(7000)]
+    [InlineData(1200)]
+    public void Hold_on_the_squawk_sets_the_vfr_code(int vfr)
     {
+        _settings.Store.Update(s => s with { VfrSquawk = vfr });
+        _sim.Report(Cockpit with { Squawk = 4521 });
         _panel.Raise(new SelectorMoved(PanelRow.Lower, Selector.Xpdr));
 
         Press(PanelRow.Lower, TimeSpan.FromMilliseconds(700));
-        Assert.Equal(BaroUnit.InchesOfMercury, _settings.Store.Current.BaroUnit);
-        Assert.Equal(("7000.", "29.92"), (_panel.Shown.LowerLeft, _panel.Shown.LowerRight)); // still editing the squawk
-        Assert.Empty(_sim.Sent); // nothing for the simulator: only the display unit changed
 
-        Press(PanelRow.Lower, TimeSpan.FromMilliseconds(700));
-        Assert.Equal(BaroUnit.Hectopascal, _settings.Store.Current.BaroUnit);
-        Assert.Equal("1013", _panel.Shown.LowerRight);
+        Assert.Equal(new SetSquawk(vfr), _sim.Sent.Single());
+        Assert.Equal(($"{vfr:0000}.", "1013"), (_panel.Shown.LowerLeft, _panel.Shown.LowerRight)); // still editing the squawk
     }
 
     [Fact]
-    public void Triple_press_on_xpdr_sets_standard_pressure_and_keeps_the_edit_focus()
+    public void Hold_on_the_altimeter_sets_standard_pressure()
+    {
+        _panel.Raise(new SelectorMoved(PanelRow.Upper, Selector.Xpdr));
+        Press(PanelRow.Upper, TimeSpan.FromMilliseconds(100)); // select the altimeter
+
+        Press(PanelRow.Upper, TimeSpan.FromMilliseconds(700));
+
+        Assert.IsType<SetBaroStandard>(_sim.Sent.Single());
+        Assert.Equal(("7000", "1013."), (_panel.Shown.UpperLeft, _panel.Shown.UpperRight)); // still editing the altimeter
+    }
+
+    [Fact]
+    public void Presses_on_xpdr_move_the_edit_focus_back_and_forth()
     {
         _panel.Raise(new SelectorMoved(PanelRow.Upper, Selector.Xpdr));
 
@@ -186,23 +198,7 @@ public sealed class PanelControllerTests : IDisposable
             _time.Advance(TimeSpan.FromMilliseconds(100));
         }
 
-        Assert.IsType<SetBaroStandard>(_sim.Sent.Single());
-        Assert.Equal("7000.", _panel.Shown.UpperLeft);
-        Assert.Equal(BaroUnit.Hectopascal, _settings.Store.Current.BaroUnit);
-    }
-
-    [Fact]
-    public void Slow_presses_on_xpdr_only_move_the_edit_focus()
-    {
-        _panel.Raise(new SelectorMoved(PanelRow.Upper, Selector.Xpdr));
-
-        for (int i = 0; i < 3; i++)
-        {
-            Press(PanelRow.Upper, TimeSpan.FromMilliseconds(80));
-            _time.Advance(TimeSpan.FromMilliseconds(700));
-        }
-
-        Assert.Equal(BaroUnit.Hectopascal, _settings.Store.Current.BaroUnit);
+        Assert.Empty(_sim.Sent);
         Assert.Equal(("7000", "1013."), (_panel.Shown.UpperLeft, _panel.Shown.UpperRight)); // three toggles: altimeter
     }
 

@@ -115,9 +115,14 @@
                 <CheckBox IsChecked="{Binding CompactCom}" Content="Compact display: 123.405 shows as 23.405" />
 
                 <TextBlock Classes="h2" Text="Transponder / altimeter" />
-                <CheckBox IsChecked="{Binding BaroInHg}" Content="Altimeter in inHg (otherwise hPa; hold ACT/STBY on XPDR to switch)" />
+                <CheckBox IsChecked="{Binding BaroInHg}" Content="Altimeter in inHg (otherwise hPa)" />
+                <StackPanel Orientation="Horizontal" Spacing="16">
+                    <TextBlock Text="VFR squawk (hold ACT/STBY)" VerticalAlignment="Center" />
+                    <RadioButton GroupName="Vfr" IsChecked="{Binding Vfr7000}" Content="7000 (Europe)" />
+                    <RadioButton GroupName="Vfr" IsChecked="{Binding Vfr1200}" Content="1200 (US)" />
+                </StackPanel>
                 <TextBlock Classes="caption" TextWrapping="Wrap"
-                           Text="XPDR: squawk on the left (outer knob = first two digits, inner = last two), altimeter on the right. Press ACT/STBY to edit the altimeter instead, press it three times quickly for standard pressure." />
+                           Text="XPDR: squawk on the left (outer knob = first two digits, inner = last two), altimeter on the right. Press ACT/STBY to switch which one the knobs edit. Hold it to set the VFR squawk, or standard pressure when the altimeter is selected." />
 
                 <TextBlock Classes="h2" Text="Knob feel" />
                 <CheckBox IsChecked="{Binding AccelerationEnabled}" Content="Accelerate fast spins" />
@@ -134,8 +139,6 @@
 
                     <TextBlock Grid.Row="2" Text="Long press (ms)" VerticalAlignment="Center" />
                     <NumericUpDown Grid.Row="2" Grid.Column="1" Minimum="200" Maximum="3000" Increment="50" Value="{Binding LongPressMs}" />
-                    <TextBlock Grid.Row="2" Grid.Column="2" Text="Triple press gap (ms)" VerticalAlignment="Center" />
-                    <NumericUpDown Grid.Row="2" Grid.Column="3" Minimum="150" Maximum="1500" Increment="50" Value="{Binding MultiPressGapMs}" />
                 </Grid>
 
                 <TextBlock Classes="h2" Text="Window" />

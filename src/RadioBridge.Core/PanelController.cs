@@ -63,7 +63,6 @@ public sealed class PanelController : IDisposable
     private readonly bool[] _editBaro = new bool[2];
     private readonly ITimer?[] _longPressTimers = new ITimer?[2];
     private readonly bool[] _longPressFired = new bool[2];
-    private readonly (int Count, long Last)[] _presses = new (int, long)[2]; // quick presses in a row, per row
     private readonly (string Left, string Right, long Until)?[] _flash = new (string, string, long)?[2];
     private readonly Dictionary<Field, (double Value, long Until)> _pending = new();
     private readonly RowActivity[] _activity = [RowActivity.None, RowActivity.None];
@@ -113,7 +112,6 @@ public sealed class PanelController : IDisposable
                     case SelectorMoved m:
                         _selectors[(int)m.Row] = m.Position;
                         _editBaro[(int)m.Row] = false;
-                        _presses[(int)m.Row] = (0, 0);
                         _log.LogDebug("{Row} selector -> {Position}", m.Row, m.Position);
                         break;
                     case KnobTurned k:
@@ -204,11 +202,6 @@ public sealed class PanelController : IDisposable
     private void OnButtonDown(PanelRow row)
     {
         int i = (int)row;
-        long now = _time.GetTimestamp();
-        var (count, last) = _presses[i];
-        bool quick = count > 0 && _time.GetElapsedTime(last, now).TotalMilliseconds <= _settings.Current.MultiPressGapMs;
-        _presses[i] = (quick ? count + 1 : 1, now);
-
         _longPressFired[i] = false;
         _longPressTimers[i]?.Dispose();
         _longPressTimers[i] = _time.CreateTimer(_ => OnLongPress(row), null,
@@ -231,14 +224,6 @@ public sealed class PanelController : IDisposable
                 _sim.Send(new SwapRadio(radio));
                 _log.LogDebug("Swap {Radio}", radio);
                 break;
-            case Selector.Xpdr when _presses[i].Count >= 3:
-                // Triple press: the first two presses already toggled the edit focus there and back,
-                // so this one leaves it alone and sets standard pressure instead.
-                _presses[i] = (0, 0);
-                _pending.Remove(Field.Baro);
-                _sim.Send(new SetBaroStandard());
-                _log.LogDebug("Baro STD");
-                break;
             case Selector.Xpdr:
                 _editBaro[i] = !_editBaro[i];
                 break;
@@ -253,15 +238,21 @@ public sealed class PanelController : IDisposable
             if (_longPressTimers[i] is null)
                 return; // released just before the timer fired
             _longPressFired[i] = true;
-            _presses[i] = (0, 0); // a hold never counts towards a triple press
             _activity[i] = _activity[i] with { LongPress = true };
 
             switch (_selectors[i])
             {
-                case Selector.Xpdr:
-                    var unit = _settings.Current.BaroUnit == BaroUnit.Hectopascal ? BaroUnit.InchesOfMercury : BaroUnit.Hectopascal;
-                    _settings.Update(s => s with { BaroUnit = unit });
-                    _log.LogInformation("Altimeter unit set to {Unit}.", unit);
+                // The hold acts on whichever XPDR value the knobs edit.
+                case Selector.Xpdr when _editBaro[i]:
+                    _pending.Remove(Field.Baro);
+                    _sim.Send(new SetBaroStandard());
+                    _log.LogDebug("Baro STD");
+                    break;
+                case Selector.Xpdr when _sim.IsConnected:
+                    int vfr = _settings.Current.VfrSquawk;
+                    SetPending(Field.Squawk, vfr);
+                    _sim.Send(new SetSquawk(vfr));
+                    _log.LogDebug("Squawk VFR {Code:0000}", vfr);
                     break;
                 case Selector.Com1 or Selector.Com2:
                     var spacing = _settings.Current.ComSpacing == ComSpacing.Khz833 ? ComSpacing.Khz25 : ComSpacing.Khz833;

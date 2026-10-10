@@ -206,7 +206,7 @@ public sealed class RadioScenarios(AppFixture fx) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Altimeter_is_edited_after_a_press_and_reset_to_standard_with_a_triple_press()
+    public async Task Altimeter_is_edited_after_a_press_and_reset_to_standard_with_a_hold()
     {
         await App.SelectAsync(Upper, Selector.Xpdr);
         var before = await GivenAsync(s => Math.Abs(s.BaroHpa - 1013.2) < 0.1, ("sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot", 29.92));
@@ -217,25 +217,27 @@ public sealed class RadioScenarios(AppFixture fx) : IAsyncLifetime
         double expected = Math.Round(before.BaroHpa) + 2;
         await App.WaitForAsync(s => Math.Abs(s.Sim.State.BaroHpa - expected) < 0.2, $"altimeter {expected} hPa");
 
-        await Task.Delay(700); // let the earlier press fall out of the triple-press window
-        for (int i = 0; i < 3; i++)
-            await App.PressAsync(Upper, holdMs: 60); // triple press: standard pressure
+        await App.PressAsync(Upper, holdMs: 800);
         await App.WaitForAsync(s => Math.Abs(s.Sim.State.BaroHpa - 1013.25) < 0.2 && s.Displays.UpperRight == "1013.", "standard pressure, still editing the altimeter");
+
+        await App.PutSettingsAsync(fx.InitialSettings with { BaroUnit = BaroUnit.InchesOfMercury });
+        await App.WaitForAsync(s => s.Displays.UpperRight == "29.92.", "the altimeter in inHg");
     }
 
-    [Fact]
-    public async Task Hold_on_xpdr_switches_the_altimeter_unit()
+    [Theory]
+    [InlineData(7000)]
+    [InlineData(1200)]
+    public async Task Hold_on_the_squawk_sets_the_vfr_code(int vfr)
     {
+        await App.PutSettingsAsync(fx.InitialSettings with { VfrSquawk = vfr });
         await App.SelectAsync(Upper, Selector.Xpdr);
-        var before = await GivenAsync(s => Math.Abs(s.BaroHpa - 1013.2) < 0.1, ("sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot", 29.92));
-        await App.WaitForAsync(s => s.Displays.UpperRight == DisplayFormat.Baro(before.BaroHpa, BaroUnit.Hectopascal), "the altimeter in hPa");
+        var before = await GivenAsync(s => s.Squawk == 4521, ($"{Radios}transponder_code", 4521));
+        await App.WaitForAsync(s => s.Displays.UpperLeft == $"{before.Squawk:0000}.", "the squawk with edit focus");
 
         await App.PressAsync(Upper, holdMs: 800);
 
-        string inHg = DisplayFormat.Baro(before.BaroHpa, BaroUnit.InchesOfMercury);
-        var state = await App.WaitForAsync(s => s.Settings.BaroUnit == BaroUnit.InchesOfMercury && s.Displays.UpperRight == inHg, $"the altimeter in inHg ({inHg})");
-        Assert.Equal($"{state.Sim.State.Squawk:0000}.", state.Displays.UpperLeft); // the knobs still edit the squawk
-        Assert.Equal(before.BaroHpa, state.Sim.State.BaroHpa, 1);                  // the simulator's setting is untouched
+        var state = await App.WaitForAsync(s => s.Sim.State.Squawk == vfr, $"squawk {vfr:0000} in the simulator");
+        Assert.Equal($"{vfr:0000}.", state.Displays.UpperLeft); // the knobs still edit the squawk
     }
 
     [Fact]

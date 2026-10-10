@@ -63,7 +63,8 @@ there first when a scenario fails. The failure message also includes the last di
 - A long press on COM toggles 8.33/25 kHz and flashes the new spacing.
 - NAV2 on the lower row tunes, wraps and swaps.
 - ADF tuning, the DME display (emulator only), transponder digit pairs.
-- Altimeter editing with standard pressure on a triple press, and the hold switching hPa and inHg.
+- Altimeter editing, standard pressure on a hold, and the inHg display.
+- A hold on the squawk sets the configured VFR code (7000 and 1200).
 - The classic COM display setting applies immediately.
 - Knob turns, a held ACT/STBY and a long press are reported for the window's knob and switch view.
 - Test mode drives the panel without a simulator and steps aside when one connects (emulator only).
