@@ -65,6 +65,9 @@ public static class AppPaths
     /// <summary>%APPDATA%\RadioBridge on Windows, ~/.config/RadioBridge on Linux and macOS.</summary>
     public static string DataDirectory { get; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RadioBridge");
+
+    /// <summary>The folder of the executable that was started (for the single-file app, where RadioBridge.exe is).</summary>
+    public static string ExecutableDirectory { get; } = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
 }
 
 /// <summary>Loads, saves and publishes <see cref="BridgeSettings"/> (JSON).</summary>

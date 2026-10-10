@@ -224,7 +224,10 @@ aircraft loads, the list is built again. On a live SF-260 it held 314 of X-Plane
 
 `Record` does nothing while no recording runs. Otherwise it formats the line on the calling thread
 and queues it; a background task writes the queue and flushes whenever it runs dry. The file is shared
-for reading, and a recording stops by itself at 200 MB. Starting one deletes all but the newest 20
+for reading, and a recording stops by itself at 200 MB. Recordings go next to the executable
+(`AppPaths.ExecutableDirectory`, `AppContext.BaseDirectory`, which for the single file is where
+`RadioBridge.exe` is), where users find them; if that folder can't be written, `recordings` in the data
+folder; with `--data-dir`, `recordings` in that folder. Starting one deletes all but the newest 20
 `radiobridge-*.jsonl` files in the folder. The window, the tray, `--record`, the `RecordAtStart` setting
 (off by default) and the automation API (`POST /api/recording`) start and stop it.
 

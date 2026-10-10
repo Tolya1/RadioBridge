@@ -132,11 +132,15 @@ public class SimConnectLocatorTests
 
 public class MsfsBackendNoticeTests
 {
-    private static async Task<SimNotice?> NoticeAfterStart(FakeMachine machine, Func<string?>? configured = null)
+    /// <param name="expected">Wait for a notice (which a busy test run can delay); otherwise give the loop time for one pass.</param>
+    private static async Task<SimNotice?> NoticeAfterStart(FakeMachine machine, Func<string?>? configured = null, bool expected = true)
     {
         using var backend = new MsfsBackend(configured, machine);
         backend.Start();
-        await Task.Delay(500); // the first pass of the backend's loop
+        if (expected)
+            await Wait.Until(() => backend.Notice is not null, "the notice");
+        else
+            await Task.Delay(500); // the first pass of the backend's loop
         return backend.Notice;
     }
 
@@ -157,7 +161,7 @@ public class MsfsBackendNoticeTests
     {
         Skip.IfNot(OperatingSystem.IsWindows(), "The MSFS backend is Windows-only.");
 
-        Assert.Null(await NoticeAfterStart(new FakeMachine()));
+        Assert.Null(await NoticeAfterStart(new FakeMachine(), expected: false));
     }
 
     [SkippableFact]

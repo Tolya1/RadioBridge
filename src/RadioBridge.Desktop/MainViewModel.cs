@@ -212,14 +212,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
         get
         {
             var recorder = _host.Recorder;
-            string? file = recorder.FilePath is { } path ? Path.GetFileName(path) : null;
-            if (recorder.IsRecording)
-                return $"Recording to {file} ({Size(recorder.BytesWritten)}). Reproduce the problem, then stop.";
-            return file is null
-                ? "Saves everything the panel, RadioBridge and the simulator do to a file you can send with a bug report."
-                : $"Saved {file} ({Size(recorder.BytesWritten)}).";
+            if (_recordingFailed)
+                return "Couldn't create a recording file, neither next to RadioBridge nor in its data folder. The log says why.";
+            if (recorder.FilePath is not { } path)
+                return "Saves everything the panel, RadioBridge and the simulator do to a file next to RadioBridge, for a bug report.";
+            string where = $"{Path.GetFileName(path)} in {Path.GetDirectoryName(path)}";
+            return recorder.IsRecording
+                ? $"Recording to {where} ({Size(recorder.BytesWritten)}). Reproduce the problem, then stop."
+                : $"Saved {where} ({Size(recorder.BytesWritten)}).";
         }
     }
+
+    private bool _recordingFailed;
 
     public string RecordingDirectory => _host.RecordingDirectory;
 
@@ -234,11 +238,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (IsRecording)
             _host.StopRecording();
         else
-            _host.StartRecording();
+            _recordingFailed = _host.StartRecording() is null;
+        Raise(nameof(RecordingStatus));
     }
 
     private void OnRecordingChanged()
     {
+        if (IsRecording)
+            _recordingFailed = false;
         _recordingTimer.IsEnabled = IsRecording;
         Raise(nameof(IsRecording));
         Raise(nameof(RecordButtonText));

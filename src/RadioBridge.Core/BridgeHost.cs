@@ -14,8 +14,14 @@ namespace RadioBridge.Core;
 
 public sealed record BridgeOptions
 {
-    /// <summary>Holds settings.json and the logs and recordings folders.</summary>
+    /// <summary>Holds settings.json and the logs folder.</summary>
     public string DataDirectory { get; init; } = AppPaths.DataDirectory;
+
+    /// <summary>
+    /// Where debug recordings go. Null (the default): next to the executable that was started, where they
+    /// are easy to find; <see cref="FallbackRecordingDirectory"/> if that folder can't be written.
+    /// </summary>
+    public string? RecordingDirectory { get; init; }
 
     /// <summary>Open the USB panel. Off for automated runs that must not touch the hardware.</summary>
     public bool UsePhysicalPanel { get; init; } = true;
@@ -31,7 +37,9 @@ public sealed record BridgeOptions
 
     public string SettingsFile => Path.Combine(DataDirectory, "settings.json");
     public string LogDirectory => Path.Combine(DataDirectory, "logs");
-    public string RecordingDirectory => Path.Combine(DataDirectory, "recordings");
+
+    /// <summary>For recordings when the preferred folder can't be written (e.g. RadioBridge in Program Files).</summary>
+    public string FallbackRecordingDirectory => Path.Combine(DataDirectory, "recordings");
 }
 
 /// <summary>Wires the panel(s), simulators and controller together. Shared by the window and headless mode.</summary>
@@ -79,7 +87,11 @@ public sealed class BridgeHost : IDisposable
     public PanelController Controller { get; }
     public Recorder Recorder { get; }
 
-    public string RecordingDirectory => _options.RecordingDirectory;
+    /// <summary>The folder of the running or last recording; before the first one, where it will go.</summary>
+    public string RecordingDirectory => Recorder.FilePath is { } file ? Path.GetDirectoryName(file)! : PreferredRecordingDirectory;
+
+    /// <summary>Where recordings go when that folder can be written: next to the executable unless set otherwise.</summary>
+    public string PreferredRecordingDirectory => _options.RecordingDirectory ?? AppPaths.ExecutableDirectory;
 
     public void Start()
     {
@@ -89,24 +101,43 @@ public sealed class BridgeHost : IDisposable
         _automation?.Start();
     }
 
-    /// <summary>Starts a debug recording (or keeps the running one) and returns its file.</summary>
-    public string StartRecording()
+    /// <summary>
+    /// Starts a debug recording (or keeps the running one) and returns its file: next to the executable, or in
+    /// the data folder when that can't be written. Null, and a log line, when it can't be written anywhere.
+    /// </summary>
+    public string? StartRecording()
     {
-        string path = Recorder.Start(RecordingDirectory, w =>
+        string? path = null;
+        foreach (string folder in new[] { PreferredRecordingDirectory, _options.FallbackRecordingDirectory }.Distinct())
         {
-            var app = Assembly.GetEntryAssembly() ?? typeof(BridgeHost).Assembly;
-            w.WriteString("app", app.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? app.GetName().Version?.ToString());
-            w.WriteString("os", RuntimeInformation.OSDescription);
-            w.WriteString("runtime", RuntimeInformation.FrameworkDescription);
-            w.WriteBoolean("physicalPanel", _options.UsePhysicalPanel);
-            w.WriteString("dataDirectory", _options.DataDirectory);
-            WriteSettings(w, Settings.Current);
-            w.WriteString("simulator", Sim.Name);
-            w.WriteBoolean("panelConnected", Controller.View.PanelConnected);
-            w.WriteRadioState("radios", Sim.State);
-        });
-        _log.LogInformation("Debug recording to {Path}.", path);
+            try
+            {
+                path = Recorder.Start(folder, WriteHeader);
+                break;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _log.LogWarning("Can't write a debug recording to {Folder}: {Message}", folder, ex.Message);
+            }
+        }
+        if (path is not null)
+            _log.LogInformation("Debug recording to {Path}.", path);
         return path;
+    }
+
+    private void WriteHeader(Utf8JsonWriter w)
+    {
+        var app = Assembly.GetEntryAssembly() ?? typeof(BridgeHost).Assembly;
+        w.WriteString("app", app.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? app.GetName().Version?.ToString());
+        w.WriteString("os", RuntimeInformation.OSDescription);
+        w.WriteString("runtime", RuntimeInformation.FrameworkDescription);
+        w.WriteBoolean("physicalPanel", _options.UsePhysicalPanel);
+        w.WriteString("executableDirectory", AppPaths.ExecutableDirectory);
+        w.WriteString("dataDirectory", _options.DataDirectory);
+        WriteSettings(w, Settings.Current);
+        w.WriteString("simulator", Sim.Name);
+        w.WriteBoolean("panelConnected", Controller.View.PanelConnected);
+        w.WriteRadioState("radios", Sim.State);
     }
 
     public void StopRecording()

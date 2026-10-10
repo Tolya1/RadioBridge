@@ -208,7 +208,7 @@ it is hidden in the tray.
 
 Settings are in the window and are saved immediately to `settings.json` in the data folder:
 
-| OS | Data folder (settings, logs and recordings) |
+| OS | Data folder (settings and logs) |
 |---|---|
 | Windows | `%APPDATA%\RadioBridge` |
 | Linux / macOS | `~/.config/RadioBridge` |
@@ -241,7 +241,7 @@ RadioBridge [options]
   --panel-test         Check the panel: show test patterns, then print knob and button events.
   --no-panel           Do not open the USB panel.
   --automation PORT    Enable the local automation API (testing only, see docs/testing.md).
-  --data-dir DIR       Use another folder for settings.json, logs and recordings.
+  --data-dir DIR       Use another folder for settings.json, logs and debug recordings.
   --readme             Print the readme that is built into this executable.
   --licenses           Print the license and the third-party notices built into this executable.
 ```
@@ -281,7 +281,8 @@ When the panel does something odd, a **debug recording** shows exactly what happ
    after starting, tick **Settings › Debug › Record a debug log every time RadioBridge starts** (or
    start it once with `--record`), and untick it when you're done.
 2. Do what goes wrong: turn the knob, press ACT/STBY, wait until the values misbehave.
-3. Click **Stop recording**, then **Open folder**, and attach the newest file to your report
+3. Click **Stop recording**. The file (`radiobridge-<date>-<time>.jsonl`) is **next to
+   `RadioBridge.exe`**; **Open folder** opens that folder. Attach it to your report
    ([GitHub issues](https://github.com/Tolya1/RadioBridge/issues)). Zip it if it is big.
 
 The recording holds everything RadioBridge sees and does: the panel's raw input and what its displays
@@ -291,10 +292,12 @@ radio, altimeter and avionics-power datarefs of the loaded aircraft and its add-
 Bendix King radios, a GTN or a custom altimeter), because add-ons often run their own radios and their
 datarefs show what the cockpit really does. RadioBridge's log lines and settings are in it too.
 
-It stays on your computer (in the `recordings` folder in the data folder) until you send it. It holds
-no personal data beyond your user name in file paths and the version of your operating system.
-A recording stops by itself at 200 MB, and the folder keeps the newest 20 recordings, so a recording
-setting left on can't fill the disk.
+It stays on your computer until you send it: in the folder RadioBridge was started from, or, when
+that folder can't be written (Program Files, say), in the `recordings` folder in the data folder. With
+`--data-dir`, recordings go to `recordings` in that folder. A recording holds no personal data beyond
+your user name in file paths and the version of your operating system. It stops by itself at 200 MB,
+and only the newest 20 recordings are kept (other files are never touched), so a recording setting
+left on can't fill the disk.
 
 The file is [JSON Lines](https://jsonlines.org): one event per line, each with `ms` (milliseconds since
 the recording started), `t` (the time of day), `src` (`panel`, `controller`, `sim`, `xplane`, `msfs`,

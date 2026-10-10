@@ -94,7 +94,16 @@ public sealed class Recorder : IDisposable
     private int RemoveOldRecordings(string directory, string current)
     {
         int removed = 0;
-        var old = new DirectoryInfo(directory).GetFiles(FilePattern)
+        FileInfo[] all;
+        try
+        {
+            all = new DirectoryInfo(directory).GetFiles(FilePattern);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return 0; // tidying up is a nicety; the recording itself is running
+        }
+        var old = all
             .Where(f => !string.Equals(f.FullName, Path.GetFullPath(current), StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(f => f.LastWriteTimeUtc)
             .Skip(Math.Max(0, KeepFiles - 1));

@@ -23,7 +23,7 @@ internal static partial class Program
           --record             Start a debug recording right away (see "Reporting a problem" in the readme).
           --panel-test         Check the panel: show test patterns, then print knob and button events.
           --automation PORT    Enable the local automation API (testing only).
-          --data-dir DIR       Folder for settings.json and logs.
+          --data-dir DIR       Folder for settings.json, logs and debug recordings.
           --readme             Print the readme that is built into this executable.
           --licenses           Print the license and the third-party notices built into this executable.
           --help               Show this text.
@@ -214,7 +214,11 @@ internal static partial class Program
                             : throw new ArgumentException("--automation needs a port number."),
                     };
                     break;
-                case "--data-dir": options = options with { DataDirectory = Path.GetFullPath(Next()) }; break;
+                case "--data-dir":
+                    // A data folder given explicitly collects everything, recordings too (test runs rely on it).
+                    string dataDirectory = Path.GetFullPath(Next());
+                    options = options with { DataDirectory = dataDirectory, RecordingDirectory = Path.Combine(dataDirectory, "recordings") };
+                    break;
                 case "--help" or "-h" or "/?": mode = Mode.Help; break;
                 default: throw new ArgumentException($"Unknown option {args[i]}.");
             }
