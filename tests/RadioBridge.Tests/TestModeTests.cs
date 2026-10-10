@@ -53,11 +53,13 @@ public class TestSimBackendTests
     public void Dme_counts_down_so_live_updates_are_visible()
     {
         using var test = Start();
-        double before = test.State.Dme1Nm;
+        var before = test.State;
+        Assert.False(double.IsNaN(before.Dme2Nm)); // both DME windows show something
 
         _time.Advance(TimeSpan.FromSeconds(3));
 
-        Assert.Equal(before - 0.3, test.State.Dme1Nm, 3);
+        Assert.Equal(before.Dme1Nm - 0.3, test.State.Dme1Nm, 3);
+        Assert.Equal(before.Dme2Nm + 0.3, test.State.Dme2Nm, 3);
     }
 }
 

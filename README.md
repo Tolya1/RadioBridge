@@ -140,8 +140,8 @@ Some details:
 ## Try it without a simulator
 
 **Test mode** gives RadioBridge built-in radios. While no simulator is connected, the panel works as
-if one were: frequencies tune, ACT/STBY swaps, squawk and altimeter change, and DME1 slowly counts
-down so you can see live updates. As soon as MSFS or X-Plane connects, the panel switches to it, and
+if one were: frequencies tune, ACT/STBY swaps, squawk and altimeter change, and the two DME
+distances slowly count (DME1 down, DME2 up) so you can see live updates. As soon as MSFS or X-Plane connects, the panel switches to it, and
 it goes back to test mode when the simulator quits.
 
 Turn test mode on in **Settings › Test mode**, from the tray menu, or for one run with

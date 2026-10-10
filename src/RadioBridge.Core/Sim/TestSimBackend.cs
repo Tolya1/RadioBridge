@@ -5,7 +5,7 @@ namespace RadioBridge.Core.Sim;
 /// <summary>
 /// Built-in radios for trying the panel without a simulator ("test mode"). It is connected while
 /// test mode is on, and <see cref="SimRouter"/> only uses it when no real simulator is connected.
-/// Commands apply instantly; DME1 counts down slowly so live updates are visible on the panel.
+/// Commands apply instantly; DME1 counts down and DME2 up, so live updates are visible on the panel.
 /// </summary>
 public sealed class TestSimBackend : ISimBackend
 {
@@ -18,7 +18,7 @@ public sealed class TestSimBackend : ISimBackend
         Adf1Khz = 362,
         Adf2Khz = 1_160,
         Dme1Nm = 18.0,
-        Dme2Nm = double.NaN,
+        Dme2Nm = 6.4,
         Squawk = 7000,
         BaroHpa = 1013.25,
     };
@@ -103,8 +103,10 @@ public sealed class TestSimBackend : ISimBackend
         {
             if (!_connected)
                 return;
-            double dme = Math.Round(_state.Dme1Nm - 0.1, 1);
-            _state = _state with { Dme1Nm = dme < 0.5 ? 30.0 : dme };
+            // Inbound to station 1, outbound from station 2.
+            double dme1 = Math.Round(_state.Dme1Nm - 0.1, 1);
+            double dme2 = Math.Round(_state.Dme2Nm + 0.1, 1);
+            _state = _state with { Dme1Nm = dme1 < 0.5 ? 30.0 : dme1, Dme2Nm = dme2 > 30.0 ? 0.5 : dme2 };
         }
         Changed?.Invoke();
     }

@@ -93,7 +93,7 @@ exposes the first one that connects. It fails over when that one disconnects.
 
 `TestSimBackend` is the router's *fallback*: built-in radios that are connected while test mode is
 on. The router only picks it when no real simulator is connected, and switches away as soon as one
-connects. It applies commands instantly and counts DME1 down once a second, so live updates show.
+connects. It applies commands instantly and moves both DMEs (DME1 down, DME2 up) once a second, so live updates show.
 
 ### X-Plane (`XPlaneBackend`)
 
