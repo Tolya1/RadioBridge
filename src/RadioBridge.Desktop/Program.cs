@@ -2,7 +2,9 @@ using System.Runtime.InteropServices;
 using Avalonia;
 using Microsoft.Extensions.Logging;
 using RadioBridge.Core;
+using RadioBridge.Core.Docs;
 using RadioBridge.Core.Panel;
+using RadioBridge.Desktop.Reader;
 using Serilog;
 
 namespace RadioBridge.Desktop;
@@ -20,10 +22,12 @@ internal static partial class Program
           --panel-test         Check the panel: show test patterns, then print knob and button events.
           --automation PORT    Enable the local automation API (testing only).
           --data-dir DIR       Folder for settings.json and logs.
+          --readme             Print the readme that is built into this executable.
+          --licenses           Print the license and the third-party notices built into this executable.
           --help               Show this text.
         """;
 
-    private enum Mode { Window, Headless, PanelTest, Help }
+    private enum Mode { Window, Headless, PanelTest, Readme, Licenses, Help }
 
     public static BridgeOptions Options { get; private set; } = new();
     public static bool StartMinimized { get; private set; }
@@ -56,6 +60,12 @@ internal static partial class Program
             Console.WriteLine(Usage);
             return 0;
         }
+        if (mode is Mode.Readme or Mode.Licenses)
+        {
+            // Plain reads of the built-in documents: no panel, no instance check, works with another RadioBridge running.
+            PrintDocuments(mode == Mode.Readme ? [DocumentKind.Readme] : [DocumentKind.License, DocumentKind.ThirdPartyNotices]);
+            return 0;
+        }
 
         // One RadioBridge per user session, whatever the mode. The only exception is a test run that
         // neither opens the panel nor serves anyone (--automation with --no-panel): it may run beside
@@ -81,6 +91,20 @@ internal static partial class Program
             Mode.PanelTest => RunPanelTest(),
             _ => BuildAvaloniaApp().StartWithClassicDesktopLifetime(args),
         };
+    }
+
+    private static void PrintDocuments(DocumentKind[] documents)
+    {
+        // The texts contain non-ASCII names (a copyright line names "AvaloniaUI OÜ"); a console's default code
+        // page would garble them.
+        Console.OutputEncoding = new System.Text.UTF8Encoding(false);
+        for (int i = 0; i < documents.Length; i++)
+        {
+            if (i > 0)
+                Console.Write("\n\n----------------------------------------------------------------------\n\n");
+            Console.Write(DocumentLibrary.Read(documents[i]));
+        }
+        Console.Write('\n'); // the texts are LF only; so is the output, to the end
     }
 
     private static int RunHeadless()
@@ -167,6 +191,8 @@ internal static partial class Program
             {
                 case "--headless": mode = Mode.Headless; break;
                 case "--panel-test": mode = Mode.PanelTest; break;
+                case "--readme": mode = Mode.Readme; break;
+                case "--licenses": mode = Mode.Licenses; break;
                 case "--minimized": minimized = true; break;
                 case "--no-panel": options = options with { UsePhysicalPanel = false }; break;
                 case "--test-mode": options = options with { TestMode = true }; break;

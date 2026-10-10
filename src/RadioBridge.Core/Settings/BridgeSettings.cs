@@ -27,6 +27,9 @@ public sealed record BridgeSettings
     /// <summary>Squawk set by holding ACT/STBY on XPDR: 7000 (Europe) or 1200 (US).</summary>
     public int VfrSquawk { get; init; } = 7000;
 
+    /// <summary>Open the readme and third-party notices when RadioBridge starts. "Don't show again" clears it.</summary>
+    public bool ShowReaderAtStart { get; init; } = true;
+
     /// <summary>Drive the panel with built-in test radios while no simulator is connected.</summary>
     public bool TestMode { get; init; }
 

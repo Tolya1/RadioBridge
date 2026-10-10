@@ -3,9 +3,23 @@
 | Layer | Project | What it proves | Run by |
 |---|---|---|---|
 | Unit | `tests/RadioBridge.Tests` | Protocol encoding and decoding, 8.33 kHz math, formatting, squawk pairs, the controller (on a fake clock), knob and button activity, the sim router and test mode, and the X-Plane backend against the emulator | `mise run ci` |
+| UI | `tests/RadioBridge.UiTests` | The readme and notices window with real text layout and simulated clicks (no screen needed): Markdown renders, a click on a link follows it, a drag across one doesn't, tabs switch, "Don't show again" appears only at start | `mise run ci` (`mise run test:ui`) |
 | Emulator | `tests/RadioBridge.FakeXPlane` | Not a test itself: an emulation of X-Plane's Web API and radios, used by both test layers | |
 | Functional | `tests/RadioBridge.FunctionalTests` | The built app, run as its own process and driven end to end, against the emulator or a live simulator | `mise run ci` |
 | Hardware | `HardwareTests` in the unit project | On a real panel: other programs can open it while RadioBridge has it and the other way round, and selector positions are read on connect | `mise run test:hardware` (opt-in) |
+
+## UI tests
+
+`RadioBridge.UiTests` runs Avalonia headless: real Skia and HarfBuzz text layout without a display, and
+mouse input sent into the window in-process. That is enough to find where a link's text is, click
+there, and check that the renderer navigated. (`Avalonia.Headless.XUnit` isn't used: it needs xunit v3,
+and the rest of the suite is on v2.) The things only a real display shows, such as how it looks, are
+checked by eye: run `RadioBridge` without `--minimized`, and the reader window opens by itself until
+you choose "Don't show again".
+
+The notices are tested at the source too: `mise run notices:check` (part of `ci`) fails when
+`THIRD-PARTY-NOTICES.md` isn't what the generator would produce, or when a dependency has no license
+text, so a dependency update can't ship without its notice.
 
 ## Hardware tests and the panel test
 

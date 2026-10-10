@@ -9,7 +9,16 @@ mise run package:windows    # the Windows release zip, from a clean checkout
 ```
 
 The package is a normal `dotnet publish` with `-p:SingleFile=true`, which the project file turns into
-self-contained, single-file, compressed output. Nothing else is needed in the folder. Specifically:
+self-contained, single-file, compressed output. Nothing else is needed in the folder, and the release
+zip holds just `RadioBridge.exe`. Specifically:
+
+- **The documents are inside the executable.** The readme, the license and the third-party notices are
+  embedded resources, shown by the window's **Readme**, **License** and **Third-party notices** buttons
+  (and by a window that opens on the first start) and printed by `--readme` and `--licenses`. So no
+  `README`, `LICENSE` or notices files need to ship next to it. The libraries inside the executable
+  (MIT, BSD, Apache, OFL) require their copyright notices and license texts to accompany the binary,
+  and the notices file carries the real texts, not just names. (This isn't legal advice: it is the
+  usual way a single-file application meets those terms.)
 
 - **SimConnect is never included.** It is Microsoft's, and its redistribution terms are unclear: the
   MSFS SDK EULA allows only "distributable code" and no document says this library is. RadioBridge
@@ -50,11 +59,21 @@ RADIOBRIDGE_APP=path/to/folder-or-exe mise run functional   # any package you al
 Run it against the unzipped release before publishing: it catches problems that only exist in the
 single-file form, such as a missing native library.
 
+## The third-party notices
+
+`THIRD-PARTY-NOTICES.md` is generated: `mise run notices` assembles it from the verbatim license texts
+in `packaging/notices/sources` (their origins are listed in that folder's README) and the package
+versions the project restores. The generator fails when a dependency isn't covered by any component, and
+`mise run notices:check` (part of `mise run ci`, and run by the release script) fails when the committed
+file is out of date. So after updating a dependency: restore, `mise run notices`, and if it complains, add
+the new component's license text to `sources` and the component to the generator.
+
 ## Making a release
 
 1. Set `<Version>` in `Directory.Build.props`, commit and push.
 2. `mise run ci`, then `mise run package:windows`. The script refuses to run with uncommitted
-   changes, so the zip always matches a commit. It prints the SHA-256.
+   changes, so the zip always matches a commit; it checks the notices are current, that the
+   packaged exe really prints its license texts, and prints the SHA-256.
 3. Unzip into an empty folder and run `RADIOBRIDGE_APP=<that folder> mise run functional`.
 4. Create the release with the zip attached:
 

@@ -107,20 +107,42 @@ public sealed class AppFixture : IAsyncLifetime
         // Headless by default: a visible window can be closed by someone at the desk, which quits the app
         // mid-run. RADIOBRIDGE_FT_UI=window runs the same suite with the (minimized) window.
         bool headless = Environment.GetEnvironmentVariable("RADIOBRIDGE_FT_UI") != "window" || !OperatingSystem.IsWindows();
-        var start = FindPackagedApp() is { } packaged
-            ? new ProcessStartInfo(packaged)
-            : new ProcessStartInfo("dotnet") { ArgumentList = { FindAppDll() } };
-        foreach (var arg in new[] { "--no-panel", "--automation", automationPort.ToString(), "--data-dir", RunDirectory, headless ? "--headless" : "--minimized" })
-            start.ArgumentList.Add(arg);
-        start.RedirectStandardOutput = true;
-        start.RedirectStandardError = true;
-        start.UseShellExecute = false;
-        AppPath = start.FileName == "dotnet" ? start.ArgumentList[0] : start.FileName;
+        var start = CreateStartInfo("--no-panel", "--automation", automationPort.ToString(), "--data-dir", RunDirectory, headless ? "--headless" : "--minimized");
         _app = Process.Start(start) ?? throw new InvalidOperationException("Could not start the app.");
         _app.OutputDataReceived += (_, e) => { lock (_output) _output.AppendLine(e.Data); };
         _app.ErrorDataReceived += (_, e) => { lock (_output) _output.AppendLine(e.Data); };
         _app.BeginOutputReadLine();
         _app.BeginErrorReadLine();
+    }
+
+    /// <summary>How to start the app under test (the packaged executable, or the build output) with these arguments.</summary>
+    private ProcessStartInfo CreateStartInfo(params string[] arguments)
+    {
+        var start = FindPackagedApp() is { } packaged
+            ? new ProcessStartInfo(packaged)
+            : new ProcessStartInfo("dotnet") { ArgumentList = { FindAppDll() } };
+        foreach (var argument in arguments)
+            start.ArgumentList.Add(argument);
+        start.RedirectStandardOutput = true;
+        start.RedirectStandardError = true;
+        start.StandardOutputEncoding = new System.Text.UTF8Encoding(false);
+        start.UseShellExecute = false;
+        AppPath = start.FileName == "dotnet" ? start.ArgumentList[0] : start.FileName;
+        return start;
+    }
+
+    /// <summary>Runs the app with these arguments until it exits, e.g. for a command line option that just prints something.</summary>
+    public async Task<(int ExitCode, string Output)> RunToExitAsync(params string[] arguments)
+    {
+        using var process = Process.Start(CreateStartInfo(arguments)) ?? throw new InvalidOperationException("Could not start the app.");
+        var output = process.StandardOutput.ReadToEndAsync();
+        var error = process.StandardError.ReadToEndAsync();
+        if (!process.WaitForExit(30_000))
+        {
+            process.Kill(entireProcessTree: true);
+            throw new TimeoutException($"{AppPath} {string.Join(' ', arguments)} did not exit.");
+        }
+        return (process.ExitCode, await output + await error);
     }
 
     private async Task WaitAsync(Func<Task<bool>> condition, string what)

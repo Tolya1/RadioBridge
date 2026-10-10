@@ -153,6 +153,7 @@
                 </Grid>
 
                 <TextBlock Classes="h2" Text="Window" />
+                <CheckBox IsChecked="{Binding ShowReaderAtStart}" Content="Show the readme and notices when RadioBridge starts" />
                 <CheckBox IsChecked="{Binding CloseToTray}" Content="Keep running in the tray when the window is closed" />
                 <CheckBox IsChecked="{Binding StartInTray}" Content="Start hidden in the tray (minimized if the tray option is off)" />
 
@@ -182,5 +183,13 @@
             </StackPanel>
         </Border>
         </Expander>
+
+        <!-- the documents that are built into the executable -->
+        <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="8">
+            <Button Content="Readme" Click="OnOpenReadme" />
+            <Button Grid.Column="1" Content="License" Click="OnOpenLicense" />
+            <Button Grid.Column="2" Content="Third-party notices" Click="OnOpenNotices" />
+            <TextBlock Grid.Column="3" Classes="caption" Text="{Binding VersionText}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+        </Grid>
     </StackPanel>
 </Window>

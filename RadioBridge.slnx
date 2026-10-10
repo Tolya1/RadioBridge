@@ -7,5 +7,6 @@
     <Project Path="tests/RadioBridge.FakeXPlane/RadioBridge.FakeXPlane.csproj" />
     <Project Path="tests/RadioBridge.FunctionalTests/RadioBridge.FunctionalTests.csproj" />
     <Project Path="tests/RadioBridge.Tests/RadioBridge.Tests.csproj" />
+    <Project Path="tests/RadioBridge.UiTests/RadioBridge.UiTests.csproj" />
   </Folder>
 </Solution>

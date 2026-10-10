@@ -163,6 +163,31 @@ the *changed only* flag.
 COM values are normalized to channel names whether MSFS reports the channel name (118.010) or the
 real 8.33 kHz frequency behind it (118.00833).
 
+## The built-in documents
+
+The readme, the license and the third-party notices are embedded resources (the repository's own
+`README.md`, `LICENSE` and the generated `THIRD-PARTY-NOTICES.md`, linked into the Desktop project, so
+there is one copy of each). `DocumentLibrary` reads them; `Program` prints them for `--readme` and
+`--licenses`, and the window shows them in the `ReaderWindow`.
+
+Avalonia has no Markdown view (the available libraries don't support Avalonia 12, or need a commercial
+license), so `MarkdownRenderer` turns a Markdig syntax tree into ordinary controls: headings, paragraphs,
+bold and italic, inline code, links, lists, quotes, pipe tables and fenced code. Images are left out, since
+the window is the picture. Details that matter:
+
+- **Links** are runs inside a text block, which get no pointer events, so a click is mapped back from the
+  text layout's hit position to the link whose character range it falls in. A drag that selected text is
+  not a click. What a link does is decided in Core (`DocumentLinks`, unit tested): `#heading` scrolls to it,
+  a link to `LICENSE` or `THIRD-PARTY-NOTICES.md` switches tab, a web link opens in the browser, any other
+  file opens on GitHub, and every other scheme (`file:`, `javascript:`) is ignored.
+- **Anchors** follow GitHub's rule for heading names, so the readme's contents list works in the app and on
+  GitHub alike, and a unit test checks every link in the readme points at a heading that exists.
+- **Long texts** (the notices run to thousands of lines) are laid out in pieces of 60 lines, because one
+  giant text block makes the first display slow. A tab is only built when it is first shown.
+
+`StartupReader` decides when the window opens by itself: until "Don't show again" is chosen
+(`ShowReaderAtStart`), not when started hidden, never in an automated run.
+
 ## Threads
 
 | Thread | Does |

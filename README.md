@@ -178,7 +178,18 @@ and prints every knob, selector and button event for 20 seconds.
   while you turn it. ACT/STBY lights green while pressed and turns amber **HOLD** once a long press
   has fired. This works with or without a simulator, so it also shows whether the panel itself reacts.
 - **Status** at the top: whether the panel is connected, and which simulator (or test mode) is driving it.
+  When a simulator can't connect for a reason you can fix (MSFS is running but no SimConnect library
+  was found, X-Plane refuses connections or is too old), a banner under the status says so.
 - **Settings**, folded away below.
+- **Readme**, **License** and **Third-party notices** buttons under the settings, and the version
+  (with the commit it was built from) for bug reports. They open the documents that are built into
+  the executable, so everything is in the one file.
+
+The first time RadioBridge starts, and on every start after that until you choose **Don't show again**,
+a window shows the readme, the license and the third-party notices. **Close** closes it for now. You
+can turn it back on in **Settings › Window**.
+
+![The welcome window with the readme](docs/images/reader.png)
 
 Closing the window quits RadioBridge. To keep it running in the background, turn on **Settings ›
 Window › Keep running in the tray**. Then closing the window hides it to the tray: click the tray
@@ -206,9 +217,11 @@ Settings are in the window and are saved immediately to `settings.json` in the d
 | `ComAcceleration` | on, 20 ms ×3, 40 ms ×2 | COM1/COM2 knob acceleration thresholds and multipliers (nothing else accelerates) |
 | `LongPressMs` | `600` | How long ACT/STBY must be held for a long press |
 | `TestMode` | `false` | Built-in test radios while no simulator is connected |
+| `ShowReaderAtStart` | `true` | Open the readme and notices window when RadioBridge starts ("Don't show again" clears it) |
 | `CloseToTray` | `false` | Closing the window keeps RadioBridge running in the tray |
 | `StartInTray` | `false` | Start hidden in the tray (minimized if `CloseToTray` is off) |
 | `MsfsEnabled`, `XPlaneEnabled` | `true` | Which simulators to look for (applied on restart) |
+| `SimConnectPath` | none | A SimConnect library for MSFS (a file or a folder), when the automatic search isn't enough |
 | `XPlanePort` | `8086` | X-Plane Web API port (applied on reconnect) |
 
 ## Command line
@@ -222,10 +235,13 @@ RadioBridge [options]
   --no-panel           Do not open the USB panel.
   --automation PORT    Enable the local automation API (testing only, see docs/testing.md).
   --data-dir DIR       Use another folder for settings.json and logs.
+  --readme             Print the readme that is built into this executable.
+  --licenses           Print the license and the third-party notices built into this executable.
 ```
 
-On Windows, the console modes (`--headless`, `--panel-test`, `--help`) print to the terminal they
-were started from.
+On Windows, the console modes (`--headless`, `--panel-test`, `--readme`, `--licenses`, `--help`) print
+to the terminal they were started from. `--readme` and `--licenses` are for where there is no window
+(Linux without a desktop, a sim PC you only reach over SSH): they print the same texts as the buttons.
 
 Only **one RadioBridge** runs at a time, in any mode. Launching it again brings the running window to
 the front, and a second `--headless` or `--panel-test` refuses to start. The one exception is a test
@@ -281,8 +297,10 @@ More in [docs/architecture.md](docs/architecture.md), [docs/testing.md](docs/tes
 
 ## License
 
-[Apache License 2.0](LICENSE). Third-party components are listed in
-[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+[Apache License 2.0](LICENSE). The third-party components, with the full text of each license, are in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Both are built into the executable too: the
+**License** and **Third-party notices** buttons show them, and `RadioBridge --licenses` prints them, so
+the single file needs no files next to it.
 
 The panel protocol notes build on the public documentation in
 [bjanders/fpanels](https://github.com/bjanders/fpanels). Logitech, Saitek, Microsoft Flight Simulator,

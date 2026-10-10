@@ -6,6 +6,7 @@ using Avalonia.Platform;
 using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
 using RadioBridge.Core;
+using RadioBridge.Core.Docs;
 using RadioBridge.Core.Settings;
 
 namespace RadioBridge.Desktop;
@@ -69,6 +70,13 @@ public partial class App : Application
             }
 
             host.Start();
+            if (StartupReader.ShouldShow(options, settings.Current, startHidden))
+            {
+                // After the main window is up, so the reader opens on top of it.
+                Dispatcher.UIThread.Post(
+                    () => _window.OpenReader(DocumentKind.Readme, dontShowAgain: () => settings.Update(s => s with { ShowReaderAtStart = false })),
+                    DispatcherPriority.Background);
+            }
             if (Program.OwnsInstance)
                 SingleInstance.Listen(() => Dispatcher.UIThread.Post(ShowWindow), _stop.Token);
         }

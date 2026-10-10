@@ -145,6 +145,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
     /// <summary>Test mode was switched on from the command line, so the setting can't turn it off.</summary>
     public bool TestModeForced { get; init; }
 
+    public bool ShowReaderAtStart
+    {
+        get => S.ShowReaderAtStart;
+        set => Update(s => s with { ShowReaderAtStart = value });
+    }
+
+    public string VersionText => $"RadioBridge {Reader.AppInfo.VersionText}";
+
     public bool CloseToTray
     {
         get => S.CloseToTray;

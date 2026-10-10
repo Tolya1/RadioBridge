@@ -30,6 +30,23 @@ description = "Unit tests"
 depends = ["build"]
 run = "dotnet test tests/RadioBridge.Tests --no-build"
 
+[tasks."test:ui"]
+description = "Reader UI tests: the Markdown view and the readme/notices window, with real text layout and simulated clicks (no screen needed)"
+depends = ["build"]
+run = "dotnet test tests/RadioBridge.UiTests --no-build"
+
+[tasks.notices]
+description = "Regenerate THIRD-PARTY-NOTICES.md from the license texts in packaging/notices/sources (needs Windows PowerShell)"
+depends = ["restore"]
+run = "echo The notices tools need Windows PowerShell; nothing done."
+run_windows = "powershell -NoProfile -ExecutionPolicy Bypass -File packaging/notices/generate-third-party-notices.ps1"
+
+[tasks."notices:check"]
+description = "Fail if THIRD-PARTY-NOTICES.md is out of date, or a dependency has no license text (needs Windows PowerShell)"
+depends = ["restore"]
+run = "echo The notices check needs Windows PowerShell; skipped."
+run_windows = "powershell -NoProfile -ExecutionPolicy Bypass -File packaging/notices/generate-third-party-notices.ps1 -Check"
+
 [tasks."test:hardware"]
 description = "Hardware checks on a connected radio panel: shared access, startup state (blanks its displays briefly)"
 depends = ["build"]
@@ -54,10 +71,12 @@ env = { RADIOBRIDGE_FT_SIM = "msfs" }
 run = "dotnet test tests/RadioBridge.FunctionalTests --no-build"
 
 [tasks.ci]
-description = "Everything CI would run: lint, build, unit tests, functional tests against the emulator"
+description = "Everything CI would run: lint, notices check, build, unit tests, UI tests, functional tests against the emulator"
 run = [
   { task = "lint" },
+  { task = "notices:check" },
   { task = "test" },
+  { task = "test:ui" },
   { task = "functional" },
 ]
 
