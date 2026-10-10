@@ -148,26 +148,62 @@ public sealed class PanelControllerTests : IDisposable
     public void Xpdr_knobs_edit_squawk_and_button_switches_to_baro()
     {
         _panel.Raise(new SelectorMoved(PanelRow.Upper, Selector.Xpdr));
-        Assert.Equal(("1013", "7000."), (_panel.Shown.UpperLeft, _panel.Shown.UpperRight));
+        Assert.Equal(("7000.", "1013"), (_panel.Shown.UpperLeft, _panel.Shown.UpperRight));
 
         _panel.Raise(new KnobTurned(PanelRow.Upper, Knob.Outer, 1));
         Assert.Equal(new SetSquawk(7100), _sim.Sent[^1]);
 
         Press(PanelRow.Upper, TimeSpan.FromMilliseconds(100));
-        Assert.Equal("1013.", _panel.Shown.UpperLeft);
+        Assert.Equal("1013.", _panel.Shown.UpperRight);
         _time.Advance(TimeSpan.FromSeconds(1));
         _panel.Raise(new KnobTurned(PanelRow.Upper, Knob.Inner, 1));
         Assert.Equal(new SetBaro(1014), _sim.Sent[^1]);
     }
 
     [Fact]
-    public void Long_press_on_xpdr_sets_standard_pressure()
+    public void Hold_on_xpdr_switches_the_altimeter_unit()
+    {
+        _panel.Raise(new SelectorMoved(PanelRow.Lower, Selector.Xpdr));
+
+        Press(PanelRow.Lower, TimeSpan.FromMilliseconds(700));
+        Assert.Equal(BaroUnit.InchesOfMercury, _settings.Store.Current.BaroUnit);
+        Assert.Equal(("7000.", "29.92"), (_panel.Shown.LowerLeft, _panel.Shown.LowerRight)); // still editing the squawk
+        Assert.Empty(_sim.Sent); // nothing for the simulator: only the display unit changed
+
+        Press(PanelRow.Lower, TimeSpan.FromMilliseconds(700));
+        Assert.Equal(BaroUnit.Hectopascal, _settings.Store.Current.BaroUnit);
+        Assert.Equal("1013", _panel.Shown.LowerRight);
+    }
+
+    [Fact]
+    public void Triple_press_on_xpdr_sets_standard_pressure_and_keeps_the_edit_focus()
     {
         _panel.Raise(new SelectorMoved(PanelRow.Upper, Selector.Xpdr));
-        Press(PanelRow.Upper, TimeSpan.FromMilliseconds(700));
+
+        for (int i = 0; i < 3; i++)
+        {
+            Press(PanelRow.Upper, TimeSpan.FromMilliseconds(80));
+            _time.Advance(TimeSpan.FromMilliseconds(100));
+        }
 
         Assert.IsType<SetBaroStandard>(_sim.Sent.Single());
-        Assert.Equal("7000.", _panel.Shown.UpperRight); // still editing the squawk
+        Assert.Equal("7000.", _panel.Shown.UpperLeft);
+        Assert.Equal(BaroUnit.Hectopascal, _settings.Store.Current.BaroUnit);
+    }
+
+    [Fact]
+    public void Slow_presses_on_xpdr_only_move_the_edit_focus()
+    {
+        _panel.Raise(new SelectorMoved(PanelRow.Upper, Selector.Xpdr));
+
+        for (int i = 0; i < 3; i++)
+        {
+            Press(PanelRow.Upper, TimeSpan.FromMilliseconds(80));
+            _time.Advance(TimeSpan.FromMilliseconds(700));
+        }
+
+        Assert.Equal(BaroUnit.Hectopascal, _settings.Store.Current.BaroUnit);
+        Assert.Equal(("7000", "1013."), (_panel.Shown.UpperLeft, _panel.Shown.UpperRight)); // three toggles: altimeter
     }
 
     [Fact]

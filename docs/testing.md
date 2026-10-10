@@ -18,8 +18,9 @@ on the displays and then prints every knob, selector and button event for 20 sec
 
 ## Functional tests
 
-The functional suite starts the real app the same way a user would. It runs with the window
-minimized (or `--headless` when `RADIOBRIDGE_FT_UI=headless`, and always on Linux and macOS), plus:
+The functional suite starts the real app the same way a user would. It runs `--headless` by default:
+a visible window could be closed by someone at the desk, which quits the app mid-run. Set
+`RADIOBRIDGE_FT_UI=window` to run the same suite with the window minimized (Windows only). It adds:
 
 ```text
 --no-panel --automation <free port> --data-dir tests/RadioBridge.FunctionalTests/bin/<cfg>/net10.0/runs/<timestamp>
@@ -62,7 +63,7 @@ there first when a scenario fails. The failure message also includes the last di
 - A long press on COM toggles 8.33/25 kHz and flashes the new spacing.
 - NAV2 on the lower row tunes, wraps and swaps.
 - ADF tuning, the DME display (emulator only), transponder digit pairs.
-- Altimeter editing, standard pressure, and the inHg display.
+- Altimeter editing with standard pressure on a triple press, and the hold switching hPa and inHg.
 - The classic COM display setting applies immediately.
 - Knob turns, a held ACT/STBY and a long press are reported for the window's knob and switch view.
 - Test mode drives the panel without a simulator and steps aside when one connects (emulator only).

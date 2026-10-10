@@ -108,6 +108,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
         set => Update(s => s with { LongPressMs = ToInt(value, 600) });
     }
 
+    public decimal? MultiPressGapMs
+    {
+        get => S.MultiPressGapMs;
+        set => Update(s => s with { MultiPressGapMs = ToInt(value, 500) });
+    }
+
     public bool TestMode
     {
         get => TestModeForced || S.TestMode;

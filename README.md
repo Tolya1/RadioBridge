@@ -119,14 +119,15 @@ Each row of the panel works on its own. Turn its selector to choose what that ro
 | **NAV1 / NAV2** | active | standby | standby ±1 MHz | standby ±50 kHz | swap | – |
 | **ADF** | ADF1 (upper row) or ADF2 (lower row) | – | ±10 kHz | ±1 kHz | – | – |
 | **DME** | DME1 distance | DME2 distance | – | – | – | – |
-| **XPDR** | altimeter | squawk | first two squawk digits | last two squawk digits | edit altimeter instead (outer ±10, inner ±1) and back | standard pressure |
+| **XPDR** | squawk | altimeter | first two squawk digits | last two squawk digits | edit the altimeter instead (outer ±10, inner ±1) and back | switch hPa / inHg |
 
 Some details:
 
 - **Inner knobs wrap inside the MHz** and **outer knobs wrap at the band edge** (COM 118–136 MHz, NAV
   108–117 MHz), like real radio knobs.
 - In XPDR mode, a **lit decimal point at the end** of a display marks the value the knobs edit, e.g.
-  `7000.` (squawk) or `1013.` (altimeter).
+  `7000.` (squawk) or `1013.` (altimeter). **Press ACT/STBY three times quickly** (each press within
+  500 ms of the last) to set the altimeter to standard pressure. The knobs keep editing the same value.
 - **Fast spins accelerate.** Detents less than 90 ms apart count ×3, and less than 35 ms ×8. Both
   limits can be changed in the settings.
 - When you change a frequency, the panel shows your new value right away and keeps it for under a
@@ -181,9 +182,10 @@ Settings are in the window and are saved immediately to `settings.json` in the d
 |---|---|---|
 | `ComSpacing` | `Khz833` | Inner COM knob steps: `Khz833` or `Khz25` (hold ACT/STBY on COM to toggle) |
 | `CompactComDisplay` | `true` | `23.405` style; `false` shows `123.40` |
-| `BaroUnit` | `Hectopascal` | Altimeter in `Hectopascal` or `InchesOfMercury` |
+| `BaroUnit` | `Hectopascal` | Altimeter in `Hectopascal` or `InchesOfMercury` (hold ACT/STBY on XPDR to switch) |
 | `Acceleration` | on, 35 ms ×8, 90 ms ×3 | Knob acceleration thresholds and multipliers |
 | `LongPressMs` | `600` | How long ACT/STBY must be held for a long press |
+| `MultiPressGapMs` | `500` | Most time between ACT/STBY presses that still count towards a triple press |
 | `TestMode` | `false` | Built-in test radios while no simulator is connected |
 | `CloseToTray` | `false` | Closing the window keeps RadioBridge running in the tray |
 | `StartInTray` | `false` | Start hidden in the tray (minimized if `CloseToTray` is off) |
@@ -205,6 +207,11 @@ RadioBridge [options]
 
 On Windows, the console modes (`--headless`, `--panel-test`, `--help`) print to the terminal they
 were started from.
+
+Only **one RadioBridge** runs at a time, in any mode. Launching it again brings the running window to
+the front, and a second `--headless` or `--panel-test` refuses to start. The one exception is a test
+run with both `--automation` and `--no-panel`, which never touches the panel (see
+[docs/testing.md](docs/testing.md)).
 
 ## Troubleshooting
 

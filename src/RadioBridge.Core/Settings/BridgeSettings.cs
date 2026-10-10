@@ -20,6 +20,9 @@ public sealed record BridgeSettings
 
     public int LongPressMs { get; init; } = 600;
 
+    /// <summary>Most time between ACT/STBY presses that still count as one quick series (triple press).</summary>
+    public int MultiPressGapMs { get; init; } = 500;
+
     /// <summary>Drive the panel with built-in test radios while no simulator is connected.</summary>
     public bool TestMode { get; init; }
 
