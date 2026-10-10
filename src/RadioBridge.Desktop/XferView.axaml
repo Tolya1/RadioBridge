@@ -1,0 +1,41 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="RadioBridge.Desktop.XferView"
+             Width="84">
+    <!-- The ACT/STBY switch: lit while pressed, amber "HOLD" once a long press has fired. -->
+    <UserControl.Styles>
+        <Style Selector="Border#Body">
+            <Setter Property="Background" Value="#24272d" />
+            <Setter Property="BorderBrush" Value="#3a3e46" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="0,8" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.1" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border#Body.down">
+            <Setter Property="Background" Value="#2f8f57" />
+            <Setter Property="BorderBrush" Value="#3ccf6e" />
+        </Style>
+        <Style Selector="Border#Body.hold">
+            <Setter Property="Background" Value="#c98a1b" />
+            <Setter Property="BorderBrush" Value="#f2b23a" />
+        </Style>
+        <Style Selector="TextBlock#Label">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#9aa0aa" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Border#Body.down TextBlock#Label, Border#Body.hold TextBlock#Label">
+            <Setter Property="Foreground" Value="#ffffff" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border x:Name="Body" VerticalAlignment="Center">
+        <TextBlock x:Name="Label" Text="ACT/STBY" />
+    </Border>
+</UserControl>

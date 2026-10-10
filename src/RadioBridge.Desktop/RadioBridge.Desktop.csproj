@@ -4,7 +4,16 @@
     <TargetFramework>net10.0</TargetFramework>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>RadioBridge</AssemblyName>
+    <!-- All formatting is culture-invariant; this also drops the libicu dependency on Linux. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <ApplicationIcon>Assets\radiobridge.ico</ApplicationIcon>
+    <!-- LibraryImport (AttachConsole) -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.4" />

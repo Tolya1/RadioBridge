@@ -4,21 +4,24 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace RadioBridge.Core.Sim;
 
 /// <summary>
-/// Runs every backend and follows whichever simulator is connected. The first sim to connect stays
-/// active until it disconnects; then any other connected sim takes over.
+/// Runs every backend and follows whichever simulator is connected. The first real simulator to
+/// connect stays active until it disconnects; then any other connected one takes over. The optional
+/// fallback (test mode) is only used while no real simulator is connected.
 /// </summary>
 public sealed class SimRouter : ISimBackend
 {
     private readonly IReadOnlyList<ISimBackend> _backends;
+    private readonly ISimBackend? _fallback;
     private readonly ILogger _log;
     private readonly object _gate = new();
     private ISimBackend? _active;
 
-    public SimRouter(IEnumerable<ISimBackend> backends, ILogger<SimRouter>? log = null)
+    public SimRouter(IEnumerable<ISimBackend> backends, ISimBackend? fallback = null, ILogger<SimRouter>? log = null)
     {
         _backends = backends.ToList();
+        _fallback = fallback;
         _log = log ?? NullLogger<SimRouter>.Instance;
-        foreach (var backend in _backends)
+        foreach (var backend in All)
             backend.Changed += () => OnBackendChanged(backend);
     }
 
@@ -33,9 +36,11 @@ public sealed class SimRouter : ISimBackend
 
     public event Action? Changed;
 
+    private IEnumerable<ISimBackend> All => _fallback is null ? _backends : _backends.Append(_fallback);
+
     public void Start()
     {
-        foreach (var backend in _backends)
+        foreach (var backend in All)
             backend.Start();
     }
 
@@ -47,11 +52,7 @@ public sealed class SimRouter : ISimBackend
         lock (_gate)
         {
             before = _active;
-            if (_active is null && backend.IsConnected)
-                _active = backend;
-            else if (_active == backend && !backend.IsConnected)
-                _active = _backends.FirstOrDefault(b => b != backend && b.IsConnected);
-            after = _active;
+            _active = after = Choose();
         }
 
         if (before != after)
@@ -62,9 +63,17 @@ public sealed class SimRouter : ISimBackend
             Changed?.Invoke();
     }
 
+    private ISimBackend? Choose()
+    {
+        if (_active is { IsConnected: true } current && current != _fallback)
+            return current;
+        return _backends.FirstOrDefault(b => b.IsConnected)
+               ?? (_fallback is { IsConnected: true } ? _fallback : null);
+    }
+
     public void Dispose()
     {
-        foreach (var backend in _backends)
+        foreach (var backend in All)
             backend.Dispose();
     }
 }

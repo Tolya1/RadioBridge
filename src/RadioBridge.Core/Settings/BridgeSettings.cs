@@ -20,6 +20,15 @@ public sealed record BridgeSettings
 
     public int LongPressMs { get; init; } = 600;
 
+    /// <summary>Drive the panel with built-in test radios while no simulator is connected.</summary>
+    public bool TestMode { get; init; }
+
+    /// <summary>Closing the window keeps RadioBridge running in the tray. Off on Linux, where a tray isn't guaranteed.</summary>
+    public bool CloseToTray { get; init; } = !OperatingSystem.IsLinux();
+
+    /// <summary>Start hidden in the tray (with <see cref="CloseToTray"/>) or minimized.</summary>
+    public bool StartInTray { get; init; }
+
     // Read at startup.
     public bool MsfsEnabled { get; init; } = true;
     public bool XPlaneEnabled { get; init; } = true;

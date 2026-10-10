@@ -114,7 +114,14 @@ public sealed class AutomationServer : IDisposable
         var view = _controller.View;
         return new
         {
-            panel = new { connected = view.PanelConnected, upper = view.Upper, lower = view.Lower },
+            panel = new
+            {
+                connected = view.PanelConnected,
+                upper = view.Upper,
+                lower = view.Lower,
+                upperActivity = view.UpperActivity,
+                lowerActivity = view.LowerActivity,
+            },
             displays = view.Displays,
             displayReport = Convert.ToHexString(_panel.DisplayReport),
             sim = new { connected = _sim.IsConnected, name = _sim.Name, state = _sim.State },

@@ -19,6 +19,9 @@ public sealed record BridgeOptions
     /// <summary>Port of the local automation API, or null to leave it off.</summary>
     public int? AutomationPort { get; init; }
 
+    /// <summary>Force test mode on for this run, whatever the settings say.</summary>
+    public bool TestMode { get; init; }
+
     public string SettingsFile => Path.Combine(DataDirectory, "settings.json");
     public string LogDirectory => Path.Combine(DataDirectory, "logs");
 }
@@ -40,7 +43,9 @@ public sealed class BridgeHost : IDisposable
             backends.Add(new MsfsBackend(loggers.CreateLogger<MsfsBackend>()));
         if (Settings.Current.XPlaneEnabled)
             backends.Add(new XPlaneBackend(() => Settings.Current.XPlanePort, loggers.CreateLogger<XPlaneBackend>()));
-        Sim = new SimRouter(backends, loggers.CreateLogger<SimRouter>());
+        var test = new TestSimBackend(() => options.TestMode || Settings.Current.TestMode);
+        Settings.Changed += _ => test.Refresh();
+        Sim = new SimRouter(backends, test, loggers.CreateLogger<SimRouter>());
 
         var panels = new List<IRadioPanel>();
         if (options.UsePhysicalPanel)

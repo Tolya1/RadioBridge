@@ -1,0 +1,40 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="RadioBridge.Desktop.KnobView"
+             Width="58" Height="58">
+    <!-- A concentric knob pair. Each detent rotates the pointer and briefly lights the ring. -->
+    <UserControl.Styles>
+        <Style Selector="Ellipse.ring">
+            <Setter Property="Stroke" Value="#3a3e46" />
+            <Setter Property="StrokeThickness" Value="2" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Stroke" Duration="0:0:0.15" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Ellipse.ring.active">
+            <Setter Property="Stroke" Value="#ff4b2b" />
+        </Style>
+        <Style Selector="Panel.rotor">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.08" />
+                </Transitions>
+            </Setter>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid>
+        <Ellipse x:Name="OuterRing" Classes="ring" Fill="#24272d" />
+        <Panel x:Name="OuterRotor" Classes="rotor">
+            <Rectangle Width="4" Height="9" Margin="0,4,0,0" VerticalAlignment="Top" RadiusX="2" RadiusY="2" Fill="#8a909a" />
+        </Panel>
+        <Grid Width="30" Height="30">
+            <Ellipse x:Name="InnerRing" Classes="ring" Fill="#33373f" />
+            <Panel x:Name="InnerRotor" Classes="rotor">
+                <Rectangle Width="3" Height="8" Margin="0,3,0,0" VerticalAlignment="Top" RadiusX="1.5" RadiusY="1.5" Fill="#e8eaee" />
+            </Panel>
+        </Grid>
+    </Grid>
+</UserControl>

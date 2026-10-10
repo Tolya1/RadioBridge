@@ -1,23 +1,29 @@
+using System.Runtime.InteropServices;
 using Avalonia;
 using Microsoft.Extensions.Logging;
 using RadioBridge.Core;
+using RadioBridge.Core.Panel;
 using Serilog;
 
 namespace RadioBridge.Desktop;
 
-internal static class Program
+internal static partial class Program
 {
     private const string Usage = """
         RadioBridge: Logitech/Saitek Pro Flight Radio Panel for MSFS and X-Plane.
 
         Options:
           --headless           Run without a window (stop with Ctrl+C).
-          --minimized          Start with the window minimized.
+          --minimized          Start hidden in the tray (or minimized when the tray option is off).
           --no-panel           Do not open the USB panel.
+          --test-mode          Drive the panel with built-in test radios while no simulator is connected.
+          --panel-test         Check the panel: show test patterns, then print knob and button events.
           --automation PORT    Enable the local automation API (testing only).
           --data-dir DIR       Folder for settings.json and logs.
           --help               Show this text.
         """;
+
+    private enum Mode { Window, Headless, PanelTest, Help }
 
     public static BridgeOptions Options { get; private set; } = new();
     public static bool StartMinimized { get; private set; }
@@ -27,16 +33,25 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
-        bool headless;
+        Mode mode;
         try
         {
-            (Options, headless, StartMinimized) = ParseArgs(args);
+            (Options, mode, StartMinimized) = ParseArgs(args);
         }
         catch (ArgumentException ex)
         {
+            AttachParentConsole();
             Console.Error.WriteLine(ex.Message);
             Console.Error.WriteLine(Usage);
             return 2;
+        }
+
+        if (mode != Mode.Window)
+            AttachParentConsole();
+        if (mode == Mode.Help)
+        {
+            Console.WriteLine(Usage);
+            return 0;
         }
 
         // Two instances would fight over the panel's displays.
@@ -47,7 +62,12 @@ internal static class Program
             return 1;
         }
 
-        return headless ? RunHeadless() : BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        return mode switch
+        {
+            Mode.Headless => RunHeadless(),
+            Mode.PanelTest => RunPanelTest(),
+            _ => BuildAvaloniaApp().StartWithClassicDesktopLifetime(args),
+        };
     }
 
     private static int RunHeadless()
@@ -67,6 +87,46 @@ internal static class Program
         return 0;
     }
 
+    /// <summary>Hardware self-check: patterns on the displays, then live input events.</summary>
+    private static int RunPanelTest()
+    {
+        using var loggers = CreateLoggers(Options.LogDirectory, console: false);
+        using var panel = new HidRadioPanel(loggers.CreateLogger<HidRadioPanel>());
+        using var connected = new ManualResetEventSlim();
+        panel.ConnectionChanged += c => { if (c) connected.Set(); };
+        panel.Input += e => Console.WriteLine($"  {e}");
+        panel.Start();
+
+        Console.WriteLine("Looking for the radio panel...");
+        if (!connected.Wait(TimeSpan.FromSeconds(10)))
+        {
+            Console.Error.WriteLine("No radio panel found (USB 06A3:0D05). On Linux, check the udev rule.");
+            return 1;
+        }
+        Console.WriteLine("Connected. Selector positions read from the panel:");
+        Thread.Sleep(300);
+
+        var patterns = new (string Expect, PanelDisplays Displays)[]
+        {
+            ("each display shows its own number:  11111  22222 / 33333  44444", new("11111", "22222", "33333", "44444")),
+            ("every decimal point lit:  1.2.3.4.5. on all four", new("1.2.3.4.5.", "1.2.3.4.5.", "1.2.3.4.5.", "1.2.3.4.5.")),
+            ("dashes on all four", new("-----", "-----", "-----", "-----")),
+            ("radio style:  23.405  21.505 / 110.30  113.50", new("23.405", "21.505", "110.30", "113.50")),
+        };
+        foreach (var (expect, displays) in patterns)
+        {
+            Console.WriteLine($"Displays should show {expect}");
+            panel.Show(displays);
+            Thread.Sleep(3000);
+        }
+        panel.Show(PanelDisplays.Blank);
+
+        Console.WriteLine("Displays blanked. Now turn knobs, move selectors and press ACT/STBY for 20 seconds:");
+        Thread.Sleep(20_000);
+        Console.WriteLine("Done.");
+        return 0;
+    }
+
     public static ILoggerFactory CreateLoggers(string logDirectory, bool console)
     {
         var config = new LoggerConfiguration()
@@ -82,18 +142,21 @@ internal static class Program
         return LoggerFactory.Create(builder => builder.SetMinimumLevel(LogLevel.Debug).AddSerilog(serilog, dispose: true));
     }
 
-    private static (BridgeOptions Options, bool Headless, bool Minimized) ParseArgs(string[] args)
+    private static (BridgeOptions Options, Mode Mode, bool Minimized) ParseArgs(string[] args)
     {
         var options = new BridgeOptions();
-        bool headless = false, minimized = false;
+        var mode = Mode.Window;
+        bool minimized = false;
         for (int i = 0; i < args.Length; i++)
         {
             string Next() => i + 1 < args.Length ? args[++i] : throw new ArgumentException($"{args[i]} needs a value.");
             switch (args[i])
             {
-                case "--headless": headless = true; break;
+                case "--headless": mode = Mode.Headless; break;
+                case "--panel-test": mode = Mode.PanelTest; break;
                 case "--minimized": minimized = true; break;
                 case "--no-panel": options = options with { UsePhysicalPanel = false }; break;
+                case "--test-mode": options = options with { TestMode = true }; break;
                 case "--automation":
                     options = options with
                     {
@@ -103,12 +166,26 @@ internal static class Program
                     };
                     break;
                 case "--data-dir": options = options with { DataDirectory = Path.GetFullPath(Next()) }; break;
-                case "--help" or "-h" or "/?": throw new ArgumentException("");
+                case "--help" or "-h" or "/?": mode = Mode.Help; break;
                 default: throw new ArgumentException($"Unknown option {args[i]}.");
             }
         }
-        return (options, headless, minimized);
+        return (options, mode, minimized);
     }
+
+    /// <summary>
+    /// On Windows the app is a GUI program, so it has no console of its own. For the console modes,
+    /// write to the terminal it was started from (unless output is redirected anyway).
+    /// </summary>
+    private static void AttachParentConsole()
+    {
+        if (OperatingSystem.IsWindows() && !Console.IsOutputRedirected)
+            AttachConsole(-1);
+    }
+
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool AttachConsole(int processId);
 
     // Avalonia configuration, don't remove; also used by the visual designer.
     public static AppBuilder BuildAvaloniaApp()

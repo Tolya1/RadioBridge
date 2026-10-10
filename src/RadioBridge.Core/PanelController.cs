@@ -7,14 +7,26 @@ using RadioBridge.Core.Sim;
 
 namespace RadioBridge.Core;
 
-/// <summary>What the UI shows: connection state, selector positions and the four displays.</summary>
+/// <summary>What the UI shows: connection state, selector positions, the four displays and live input.</summary>
 public sealed record PanelView(
     bool PanelConnected,
     bool SimConnected,
     string SimName,
     Selector? Upper,
     Selector? Lower,
-    PanelDisplays Displays);
+    PanelDisplays Displays,
+    RowActivity UpperActivity,
+    RowActivity LowerActivity);
+
+/// <summary>Live input on one row, so the UI can show that the controls react (with or without a sim).</summary>
+/// <param name="InnerTurns">Net inner-knob detents since start, clockwise positive.</param>
+/// <param name="OuterTurns">Net outer-knob detents since start, clockwise positive.</param>
+/// <param name="ButtonDown">ACT/STBY is held.</param>
+/// <param name="LongPress">ACT/STBY has been held long enough to count as a long press.</param>
+public sealed record RowActivity(int InnerTurns, int OuterTurns, bool ButtonDown, bool LongPress)
+{
+    public static readonly RowActivity None = new(0, 0, false, false);
+}
 
 /// <summary>
 /// Decides what the panel does: maps knobs and buttons to sim commands and renders the displays.
@@ -53,6 +65,7 @@ public sealed class PanelController : IDisposable
     private readonly bool[] _longPressFired = new bool[2];
     private readonly (string Left, string Right, long Until)?[] _flash = new (string, string, long)?[2];
     private readonly Dictionary<Field, (double Value, long Until)> _pending = new();
+    private readonly RowActivity[] _activity = [RowActivity.None, RowActivity.None];
     private ITimer? _refresh;
 
     public PanelController(IRadioPanel panel, ISimBackend sim, SettingsStore settings, TimeProvider? time = null, ILogger<PanelController>? log = null)
@@ -63,7 +76,7 @@ public sealed class PanelController : IDisposable
         _time = time ?? TimeProvider.System;
         _log = log ?? NullLogger<PanelController>.Instance;
         _accelerator = new KnobAccelerator(_time);
-        View = new PanelView(false, false, "", null, null, PanelDisplays.Blank);
+        View = new PanelView(false, false, "", null, null, PanelDisplays.Blank, RowActivity.None, RowActivity.None);
     }
 
     public PanelView View { get; private set; }
@@ -102,12 +115,18 @@ public sealed class PanelController : IDisposable
                         _log.LogDebug("{Row} selector -> {Position}", m.Row, m.Position);
                         break;
                     case KnobTurned k:
+                        var a = _activity[(int)k.Row];
+                        _activity[(int)k.Row] = k.Knob == Knob.Inner
+                            ? a with { InnerTurns = a.InnerTurns + k.Direction }
+                            : a with { OuterTurns = a.OuterTurns + k.Direction };
                         OnKnob(k);
                         break;
                     case ButtonChanged { Pressed: true } b:
+                        _activity[(int)b.Row] = _activity[(int)b.Row] with { ButtonDown = true, LongPress = false };
                         OnButtonDown(b.Row);
                         break;
                     case ButtonChanged b:
+                        _activity[(int)b.Row] = _activity[(int)b.Row] with { ButtonDown = false, LongPress = false };
                         OnButtonUp(b.Row);
                         break;
                 }
@@ -219,6 +238,7 @@ public sealed class PanelController : IDisposable
             if (_longPressTimers[i] is null)
                 return; // released just before the timer fired
             _longPressFired[i] = true;
+            _activity[i] = _activity[i] with { LongPress = true };
 
             switch (_selectors[i])
             {
@@ -253,7 +273,7 @@ public sealed class PanelController : IDisposable
             var displays = new PanelDisplays(ul, ur, ll, lr);
             _panel.Show(displays);
 
-            view = new PanelView(_panel.IsConnected, simConnected, simConnected ? _sim.Name : "", _selectors[0], _selectors[1], displays);
+            view = new PanelView(_panel.IsConnected, simConnected, simConnected ? _sim.Name : "", _selectors[0], _selectors[1], displays, _activity[0], _activity[1]);
             if (view == View)
                 return;
             View = view;

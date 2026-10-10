@@ -4,7 +4,8 @@
         x:Class="RadioBridge.Desktop.MainWindow"
         x:DataType="local:MainViewModel"
         Title="RadioBridge"
-        Width="640" SizeToContent="Height" CanResize="False"
+        Icon="avares://RadioBridge/Assets/radiobridge.ico"
+        Width="740" SizeToContent="Height" CanResize="False"
         WindowStartupLocation="CenterScreen"
         RequestedThemeVariant="Dark"
         Background="#16181c">
@@ -83,24 +84,30 @@
         <!-- panel replica -->
         <Border Classes="panel">
             <StackPanel Spacing="10">
-                <Grid ColumnDefinitions="64,170,170" ColumnSpacing="14">
+                <Grid ColumnDefinitions="64,170,170,58,84" ColumnSpacing="14">
                     <TextBlock Grid.Column="1" Classes="caption" Text="ACTIVE" HorizontalAlignment="Center" />
                     <TextBlock Grid.Column="2" Classes="caption" Text="STANDBY" HorizontalAlignment="Center" />
+                    <TextBlock Grid.Column="3" Classes="caption" Text="KNOBS" HorizontalAlignment="Center" />
                 </Grid>
-                <Grid ColumnDefinitions="64,Auto,Auto" ColumnSpacing="14">
+                <Grid ColumnDefinitions="64,170,170,58,84" ColumnSpacing="14">
                     <TextBlock Classes="mode" Text="{Binding UpperMode}" />
                     <Border Grid.Column="1" Classes="segment"><TextBlock Classes="segment" Text="{Binding UpperLeft}" /></Border>
                     <Border Grid.Column="2" Classes="segment"><TextBlock Classes="segment" Text="{Binding UpperRight}" /></Border>
+                    <local:KnobView Grid.Column="3" InnerTurns="{Binding UpperInnerTurns}" OuterTurns="{Binding UpperOuterTurns}" />
+                    <local:XferView Grid.Column="4" Pressed="{Binding UpperPressed}" Held="{Binding UpperHeld}" />
                 </Grid>
-                <Grid ColumnDefinitions="64,Auto,Auto" ColumnSpacing="14">
+                <Grid ColumnDefinitions="64,170,170,58,84" ColumnSpacing="14">
                     <TextBlock Classes="mode" Text="{Binding LowerMode}" />
                     <Border Grid.Column="1" Classes="segment"><TextBlock Classes="segment" Text="{Binding LowerLeft}" /></Border>
                     <Border Grid.Column="2" Classes="segment"><TextBlock Classes="segment" Text="{Binding LowerRight}" /></Border>
+                    <local:KnobView Grid.Column="3" InnerTurns="{Binding LowerInnerTurns}" OuterTurns="{Binding LowerOuterTurns}" />
+                    <local:XferView Grid.Column="4" Pressed="{Binding LowerPressed}" Held="{Binding LowerHeld}" />
                 </Grid>
             </StackPanel>
         </Border>
 
-        <!-- settings -->
+        <!-- settings, collapsed by default to keep the window compact -->
+        <Expander Header="Settings" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
         <Border Classes="panel">
             <StackPanel Spacing="4">
                 <TextBlock Classes="h2" Text="COM" Margin="0,0,0,4" />
@@ -129,6 +136,15 @@
                     <NumericUpDown Grid.Row="2" Grid.Column="1" Minimum="200" Maximum="3000" Increment="50" Value="{Binding LongPressMs}" />
                 </Grid>
 
+                <TextBlock Classes="h2" Text="Window" />
+                <CheckBox IsChecked="{Binding CloseToTray}" Content="Keep running in the tray when the window is closed" />
+                <CheckBox IsChecked="{Binding StartInTray}" Content="Start hidden in the tray (minimized if the tray option is off)" />
+
+                <TextBlock Classes="h2" Text="Test mode" />
+                <CheckBox IsChecked="{Binding TestMode}" IsEnabled="{Binding !TestModeForced}"
+                          Content="Drive the panel with built-in test radios while no simulator is connected" />
+                <TextBlock Classes="caption" IsVisible="{Binding TestModeForced}" Text="On for this run (started with --test-mode)." />
+
                 <TextBlock Classes="h2" Text="Simulators (applied on restart)" />
                 <StackPanel Orientation="Horizontal" Spacing="16">
                     <CheckBox IsChecked="{Binding MsfsEnabled}" Content="MSFS" />
@@ -140,5 +156,6 @@
                 <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding LogPath, StringFormat='Logs: {0}'}" />
             </StackPanel>
         </Border>
+        </Expander>
     </StackPanel>
 </Window>

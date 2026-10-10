@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using RadioBridge.Core;
 using RadioBridge.Core.Automation;
 using RadioBridge.Core.Panel;
 using RadioBridge.Core.Settings;
@@ -6,7 +7,7 @@ using RadioBridge.Core.Sim;
 
 namespace RadioBridge.FunctionalTests;
 
-public sealed record PanelInfo(bool Connected, Selector? Upper, Selector? Lower);
+public sealed record PanelInfo(bool Connected, Selector? Upper, Selector? Lower, RowActivity UpperActivity, RowActivity LowerActivity);
 
 public sealed record SimInfo(bool Connected, string Name, RadioState State);
 
@@ -75,9 +76,16 @@ public sealed class AppClient(HttpClient http)
 
     public async Task PressAsync(PanelRow row, int holdMs = 80)
     {
-        int bit = 1 << (row == PanelRow.Upper ? UpperButtonBit : LowerButtonBit);
-        await SendAsync(_bits | bit);
+        await ButtonAsync(row, down: true);
         await Task.Delay(holdMs);
+        await ButtonAsync(row, down: false);
+    }
+
+    /// <summary>Holds or releases ACT/STBY (kept in the panel's state until released).</summary>
+    public async Task ButtonAsync(PanelRow row, bool down)
+    {
+        int bit = 1 << (row == PanelRow.Upper ? UpperButtonBit : LowerButtonBit);
+        _bits = down ? _bits | bit : _bits & ~bit;
         await SendAsync(_bits);
     }
 

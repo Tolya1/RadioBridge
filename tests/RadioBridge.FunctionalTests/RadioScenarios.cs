@@ -236,6 +236,50 @@ public sealed class RadioScenarios(AppFixture fx) : IAsyncLifetime
         await App.WaitForAsync(s => s.Displays.UpperLeft == classic, $"classic display {classic}");
     }
 
+    [Fact]
+    public async Task Knob_and_button_activity_is_reported_for_the_ui()
+    {
+        await App.SelectAsync(Lower, Selector.Dme); // read-only mode: the knobs and button change nothing in the sim
+        var before = (await App.StateAsync()).Panel;
+
+        await App.TurnAsync(Lower, Knob.Outer, -1, detents: 2);
+        await App.TurnAsync(Lower, Knob.Inner, +1);
+        await App.ButtonAsync(Lower, down: true);
+
+        var state = await App.WaitForAsync(s => s.Panel.LowerActivity.ButtonDown, "ACT/STBY held");
+        Assert.Equal(before.LowerActivity.OuterTurns - 2, state.Panel.LowerActivity.OuterTurns);
+        Assert.Equal(before.LowerActivity.InnerTurns + 1, state.Panel.LowerActivity.InnerTurns);
+        await App.WaitForAsync(s => s.Panel.LowerActivity.LongPress, "the long press to register");
+
+        await App.ButtonAsync(Lower, down: false);
+        await App.WaitForAsync(s => s.Panel.LowerActivity is { ButtonDown: false, LongPress: false }, "ACT/STBY released");
+    }
+
+    [SkippableFact]
+    public async Task Test_mode_drives_the_panel_without_a_simulator_and_steps_aside_for_one()
+    {
+        Skip.If(fx.Emulator is null, "Emulator only: needs the simulator to go away.");
+        await App.SelectAsync(Upper, Selector.Com1);
+        await fx.Emulator!.StopAsync();
+        try
+        {
+            await App.WaitForAsync(s => !s.Sim.Connected, "the simulator to go away");
+
+            await App.PutSettingsAsync(fx.InitialSettings with { TestMode = true });
+            var state = await App.WaitForAsync(s => s.Sim is { Connected: true, Name: "Test mode" } && s.Displays.UpperLeft.Length > 0, "test mode");
+            int expected = Frequencies.StepComChannel(state.Sim.State.Com1.StandbyKhz, 1, ComSpacing.Khz833);
+
+            await App.TurnAsync(Upper, Knob.Inner, +1);
+            await App.WaitForAsync(s => s.Sim.State.Com1.StandbyKhz == expected && s.Displays.UpperRight == Com(expected), "test mode to tune");
+        }
+        finally
+        {
+            await fx.Emulator.StartAsync();
+        }
+
+        await App.WaitForAsync(s => s.Sim.Name == "X-Plane", "the real simulator to take over", timeoutMs: 15_000);
+    }
+
     [SkippableFact]
     public async Task Survives_the_simulator_restarting()
     {

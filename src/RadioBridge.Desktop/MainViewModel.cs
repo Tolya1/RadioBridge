@@ -41,6 +41,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string LowerLeft => _view.Displays.LowerLeft;
     public string LowerRight => _view.Displays.LowerRight;
 
+    public int UpperInnerTurns => _view.UpperActivity.InnerTurns;
+    public int UpperOuterTurns => _view.UpperActivity.OuterTurns;
+    public bool UpperPressed => _view.UpperActivity.ButtonDown;
+    public bool UpperHeld => _view.UpperActivity.LongPress;
+    public int LowerInnerTurns => _view.LowerActivity.InnerTurns;
+    public int LowerOuterTurns => _view.LowerActivity.OuterTurns;
+    public bool LowerPressed => _view.LowerActivity.ButtonDown;
+    public bool LowerHeld => _view.LowerActivity.LongPress;
+
     // ---- settings ----
 
     private BridgeSettings S => _settings.Current;
@@ -97,6 +106,31 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         get => S.LongPressMs;
         set => Update(s => s with { LongPressMs = ToInt(value, 600) });
+    }
+
+    public bool TestMode
+    {
+        get => TestModeForced || S.TestMode;
+        set
+        {
+            if (!TestModeForced)
+                Update(s => s with { TestMode = value });
+        }
+    }
+
+    /// <summary>Test mode was switched on from the command line, so the setting can't turn it off.</summary>
+    public bool TestModeForced { get; init; }
+
+    public bool CloseToTray
+    {
+        get => S.CloseToTray;
+        set => Update(s => s with { CloseToTray = value });
+    }
+
+    public bool StartInTray
+    {
+        get => S.StartInTray;
+        set => Update(s => s with { StartInTray = value });
     }
 
     public bool MsfsEnabled
