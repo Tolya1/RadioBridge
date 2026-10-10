@@ -18,11 +18,15 @@ flowchart LR
     R -- RadioState --> C
     R --> X[XPlaneBackend<br/>Web API REST + WebSocket]
     R --> M[MsfsBackend<br/>SimConnect P/Invoke]
+    R -. fallback .-> T[TestSimBackend<br/>test mode]
     C -- PanelView --> UI[Window / automation API]
 ```
 
 `BridgeHost` wires these together from `BridgeOptions` (data folder, physical panel on/off,
-automation port). The window and `--headless` share it.
+automation port, forced test mode). The window and `--headless` share it.
+
+The desktop project adds the Avalonia window (`KnobView` and `XferView` draw the controls), the tray
+icon, the command line and `--panel-test`.
 
 ## Panel
 
@@ -30,9 +34,18 @@ automation port). The window and `--headless` share it.
 |---|---|
 | `RadioPanelProtocol` | Pure encoding and decoding of the USB reports. See [radio-panel-protocol.md](radio-panel-protocol.md). |
 | `RadioPanelDecoder` | Turns successive 3-byte input reports into `SelectorMoved`, `KnobTurned` (one per detent) and `ButtonChanged` events. |
-| `HidRadioPanel` | Opens the device (VID 06A3, PID 0D05), reads on a background thread, reconnects after unplugging, and only re-sends the display report when it changed. |
+| `HidRadioPanel` | Opens the device (VID 06A3, PID 0D05), reads on a background thread, and reconnects after unplugging. It sends the display report when it changes, and again every 2 s in case another program wrote to the panel. |
+| `CurrentInputReport` | Reads the panel's current state right after opening, because the panel only reports changes. It uses HID GET_REPORT: `HidD_GetInputReport` on Windows, `HIDIOCGINPUT` on Linux, and a feature-report fallback elsewhere (the firmware answers every report request with its input state). |
 | `VirtualRadioPanel` | The same decoder fed with injected reports. It keeps the display report a real panel would get. Used by the automation API. |
 | `PanelGroup` | Fans input in and displays out across several panels. |
+
+### Sharing the panel with other software
+
+RadioBridge never locks other programs out of the panel. HidSharp's opt-in exclusivity layer is
+explicitly off (`HidRadioPanel.SharedAccess`), and the OS handle is shared for reading and writing.
+So SPAD.neXt, HangarControl or a second tool can always open the device. The worst case, when two
+programs drive the same panel, is a fight over the displays, never a lock-out.
+`mise run test:hardware` checks both directions on a real panel.
 
 ## Controller
 
@@ -42,6 +55,8 @@ automation port). The window and `--headless` share it.
   `Frequencies` handles 8.33 kHz channels, wrapping and band edges, `Squawk` handles octal digit
   pairs, and `KnobAccelerator` turns detent timing into a step multiplier.
 - It renders both rows into `PanelDisplays` (`DisplayFormat`) and publishes a `PanelView` for the UI.
+  The view also carries each row's `RowActivity`: net knob detents, and whether ACT/STBY is held or
+  a long press has fired. The window draws the knobs and switches from it, with or without a sim.
 - It refreshes every 100 ms and whenever input, sim data or settings change. Unchanged output is
   cheap, because the HID layer drops repeats.
 
@@ -75,6 +90,10 @@ void Start(); void Send(SimCommand command);
 
 Each backend converts to and from its simulator's units. `SimRouter` runs all enabled backends and
 exposes the first one that connects. It fails over when that one disconnects.
+
+`TestSimBackend` is the router's *fallback*: built-in radios that are connected while test mode is
+on. The router only picks it when no real simulator is connected, and switches away as soon as one
+connects. It applies commands instantly and counts DME1 down once a second, so live updates show.
 
 ### X-Plane (`XPlaneBackend`)
 

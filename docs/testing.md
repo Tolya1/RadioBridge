@@ -1,12 +1,20 @@
 # Testing
 
-There are three layers, all run by `mise run ci`.
+| Layer | Project | What it proves | Run by |
+|---|---|---|---|
+| Unit | `tests/RadioBridge.Tests` | Protocol encoding and decoding, 8.33 kHz math, formatting, squawk pairs, the controller (on a fake clock), knob and button activity, the sim router and test mode, and the X-Plane backend against the emulator | `mise run ci` |
+| Emulator | `tests/RadioBridge.FakeXPlane` | Not a test itself: an emulation of X-Plane's Web API and radios, used by both test layers | |
+| Functional | `tests/RadioBridge.FunctionalTests` | The built app, run as its own process and driven end to end, against the emulator or a live simulator | `mise run ci` |
+| Hardware | `HardwareTests` in the unit project | On a real panel: other programs can open it while RadioBridge has it and the other way round, and selector positions are read on connect | `mise run test:hardware` (opt-in) |
 
-| Layer | Project | What it proves |
-|---|---|---|
-| Unit | `tests/RadioBridge.Tests` | Protocol encoding and decoding, 8.33 kHz math, formatting, squawk pairs, the controller (on a fake clock), the sim router, and the X-Plane backend against the emulator |
-| Emulator | `tests/RadioBridge.FakeXPlane` | Not a test itself: an emulation of X-Plane's Web API and radios, used by both test layers |
-| Functional | `tests/RadioBridge.FunctionalTests` | The built app, run as its own process and driven end to end, against the emulator or a live simulator |
+## Hardware tests and the panel test
+
+`mise run test:hardware` needs the radio panel connected. It may run while other panel software, or
+RadioBridge itself, is running, because sharing the panel with them is part of what it checks. It
+briefly blanks the displays.
+
+To see the hardware work with your own eyes, run `RadioBridge --panel-test`. It shows test patterns
+on the displays and then prints every knob, selector and button event for 20 seconds.
 
 ## Functional tests
 
@@ -56,6 +64,8 @@ there first when a scenario fails. The failure message also includes the last di
 - ADF tuning, the DME display (emulator only), transponder digit pairs.
 - Altimeter editing, standard pressure, and the inHg display.
 - The classic COM display setting applies immediately.
+- Knob turns, a held ACT/STBY and a long press are reported for the window's knob and switch view.
+- Test mode drives the panel without a simulator and steps aside when one connects (emulator only).
 - The app survives the simulator quitting and restarting (emulator only).
 
 ## Automation API
@@ -65,7 +75,7 @@ is meant for testing and tooling, and has no authentication.
 
 | Request | Body | Returns |
 |---|---|---|
-| `GET /api/state` | | Panel connection and selectors, display text, display report (hex), the active simulator and its raw `RadioState`, settings |
+| `GET /api/state` | | Panel connection, selectors and per-row knob/button activity, display text, display report (hex), the active simulator and its raw `RadioState`, settings |
 | `POST /api/panel/report` | `{"bits": 1}` | Feeds one 24-bit input report into the virtual panel and returns the decoded events |
 | `GET /api/settings` | | Current settings |
 | `PUT /api/settings` | settings object | Replaces the settings |

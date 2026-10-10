@@ -11,6 +11,10 @@ general-purpose panel software, made for one panel and done properly:
   is running. X-Plane needs no plugin, because RadioBridge uses X-Plane's built-in Web API.
 - **A panel that never fights you.** Fast spins accelerate, no detent is lost while the sim catches
   up, and the displays always settle on what the simulator really has.
+- **Plays well with other panel software.** It runs alongside SPAD.neXt or HangarControl when they
+  drive your other panels.
+- **See it work.** The window mirrors the displays and shows the knobs and ACT/STBY switches reacting.
+  Test mode drives the panel without any simulator.
 
 ![RadioBridge window](docs/images/radiobridge.png)
 
@@ -19,6 +23,8 @@ general-purpose panel software, made for one panel and done properly:
 - [What works where](#what-works-where)
 - [Getting started](#getting-started)
 - [Using the panel](#using-the-panel)
+- [Try it without a simulator](#try-it-without-a-simulator)
+- [The window and the tray](#the-window-and-the-tray)
 - [Settings](#settings)
 - [Command line](#command-line)
 - [Troubleshooting](#troubleshooting)
@@ -51,11 +57,20 @@ mise run run
 Without mise, run `dotnet run --project src/RadioBridge.Desktop`. To build self-contained apps for
 every platform into `./publish`, run `mise run publish`.
 
-### 2. Free the panel
+### 2. Other panel software
 
-Only one program can drive the panel at a time. Quit or disable **SPAD.neXt**, **HangarControl**,
-**Logitech's Flight Panels plugins** and **xsaitekpanels** before starting RadioBridge. Otherwise the
-displays flicker between programs and both react to the knobs.
+RadioBridge opens the panel in shared mode, so other panel software can keep running. That
+includes **SPAD.neXt** and **HangarControl** driving your other panels (Multi Panel, Switch Panel,
+Stream Decks, …). The only rule: **don't assign the radio panel in their profiles**. Otherwise both
+programs react to its knobs.
+
+Software that drives the radio panel on its own has to be disabled for it:
+
+- **Logitech's Flight Panels plugins**
+- **xsaitekpanels**
+
+If something still writes to the radio panel's displays (for example a profile switch blanking
+every panel), RadioBridge puts its own values back within two seconds.
 
 ### 3. Connect your simulator
 
@@ -87,6 +102,10 @@ sudo cp packaging/linux/99-radiobridge.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
+Building on Linux with the .NET SDK needs the ICU library (`libicu`, preinstalled on most desktop
+distributions). The app itself doesn't, so where ICU is missing, build with
+`DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` set.
+
 **macOS:** builds are not signed yet. After copying the app, clear the quarantine flag once, e.g.
 `xattr -dr com.apple.quarantine publish/osx-arm64`.
 
@@ -114,6 +133,36 @@ Some details:
   second while the simulator catches up. After that the simulator's value always wins. So if a radio
   can't tune 8.33 kHz and snaps back, the panel shows that. **Hold ACT/STBY** to switch the inner knob
   to 25 kHz steps for that aircraft.
+- When RadioBridge starts, it reads where the selectors are, so the displays fill in right away. On
+  macOS this may need one turn of a selector.
+
+## Try it without a simulator
+
+**Test mode** gives RadioBridge built-in radios. While no simulator is connected, the panel works as
+if one were: frequencies tune, ACT/STBY swaps, squawk and altimeter change, and DME1 slowly counts
+down so you can see live updates. As soon as MSFS or X-Plane connects, the panel switches to it, and
+it goes back to test mode when the simulator quits.
+
+Turn test mode on in **Settings › Test mode**, from the tray menu, or for one run with
+`--test-mode`. The window shows **Test mode** where the simulator name usually is.
+
+To check the panel hardware itself, run `RadioBridge --panel-test` (with RadioBridge itself not
+running). It finds the panel and reports the selector positions. Then it shows a sequence of test
+patterns on the displays (each display's number, every decimal point, dashes, radio-style values)
+and prints every knob, selector and button event for 20 seconds.
+
+## The window and the tray
+
+- **The panel row by row:** the selector position, both displays exactly as the panel shows them,
+  and the knobs and ACT/STBY switch. Each knob pointer turns one step per detent and its ring lights
+  while you turn it. ACT/STBY lights green while pressed and turns amber **HOLD** once a long press
+  has fired. This works with or without a simulator, so it also shows whether the panel itself reacts.
+- **Status** at the top: whether the panel is connected, and which simulator (or test mode) is driving it.
+- **Settings**, folded away below.
+
+Closing the window keeps RadioBridge running in the **tray** (on Windows and macOS by default; on
+Linux, where not every desktop has a tray, it's opt-in). Click the tray icon to bring the window
+back. Its menu also has **Test mode** and **Quit**.
 
 ## Settings
 
@@ -131,6 +180,9 @@ Settings are in the window and are saved immediately to `settings.json` in the d
 | `BaroUnit` | `Hectopascal` | Altimeter in `Hectopascal` or `InchesOfMercury` |
 | `Acceleration` | on, 35 ms ×8, 90 ms ×3 | Knob acceleration thresholds and multipliers |
 | `LongPressMs` | `600` | How long ACT/STBY must be held for a long press |
+| `TestMode` | `false` | Built-in test radios while no simulator is connected |
+| `CloseToTray` | `true` (`false` on Linux) | Closing the window keeps RadioBridge running in the tray |
+| `StartInTray` | `false` | Start hidden in the tray (minimized if `CloseToTray` is off) |
 | `MsfsEnabled`, `XPlaneEnabled` | `true` | Which simulators to look for (applied on restart) |
 | `XPlanePort` | `8086` | X-Plane Web API port (applied on reconnect) |
 
@@ -139,18 +191,25 @@ Settings are in the window and are saved immediately to `settings.json` in the d
 ```text
 RadioBridge [options]
   --headless           Run without a window (stop with Ctrl+C), e.g. on a sim PC without a desktop session.
-  --minimized          Start with the window minimized.
+  --minimized          Start hidden in the tray (or minimized when the tray option is off).
+  --test-mode          Drive the panel with built-in test radios while no simulator is connected.
+  --panel-test         Check the panel: show test patterns, then print knob and button events.
   --no-panel           Do not open the USB panel.
   --automation PORT    Enable the local automation API (testing only, see docs/testing.md).
   --data-dir DIR       Use another folder for settings.json and logs.
 ```
 
+On Windows, the console modes (`--headless`, `--panel-test`, `--help`) print to the terminal they
+were started from.
+
 ## Troubleshooting
 
 | Symptom | What to check |
 |---|---|
-| *Panel not found* | Is the panel plugged in directly (not through an unpowered hub)? On Linux, install the udev rule. On Windows, the panel shows as a HID device `VID_06A3&PID_0D05`. |
-| Displays flicker or the knobs do two things | Another program is driving the panel. See [Free the panel](#2-free-the-panel). |
+| *Panel not found* | Is the panel plugged in directly (not through an unpowered hub)? On Linux, install the udev rule. On Windows, the panel shows as a HID device `VID_06A3&PID_0D05`. `--panel-test` checks the hardware on its own. |
+| The window's knobs react but the sim doesn't change | The status shows whether a simulator (or test mode) is connected. Check the selector position: DME is read-only. |
+| Displays flicker or the knobs do two things | Another program drives the radio panel too. See [Other panel software](#2-other-panel-software). |
+| Displays stay blank | No simulator is connected (turn on test mode to try the panel), or on macOS move a selector once. |
 | *No simulator* with X-Plane running | X-Plane 12.1.4+? **Disable incoming traffic** off? Same port? The log says exactly why it can't connect. |
 | *No simulator* with MSFS running | Was SimConnect.dll found? The log names the DLL it uses or lists where it searched. It must be the 64-bit DLL. |
 | COM steps snap back to the previous value | That aircraft's radio only supports 25 kHz. Hold ACT/STBY on COM to switch to 25 kHz steps. |
@@ -162,8 +221,8 @@ the latest one to bug reports.
 ## Development
 
 ```text
-src/RadioBridge.Core        panel protocol, radio logic, simulator backends, automation API
-src/RadioBridge.Desktop     Avalonia window, headless mode, command line
+src/RadioBridge.Core        panel protocol, radio logic, simulator backends, test mode, automation API
+src/RadioBridge.Desktop     Avalonia window and tray, headless mode, panel test, command line
 tests/RadioBridge.Tests             unit tests, and the X-Plane backend against the emulator
 tests/RadioBridge.FakeXPlane        X-Plane Web API emulator (library and stand-alone tool)
 tests/RadioBridge.FunctionalTests   the real app, driven end to end through its automation API
@@ -179,6 +238,7 @@ All checks run locally with [mise](https://mise.jdx.dev). There is no hosted CI 
 | `mise run functional` | The real app against the X-Plane emulator, driven through the automation API |
 | `mise run functional:xplane` | The same scenarios against a running X-Plane 12 with a flight loaded |
 | `mise run functional:msfs` | The same scenarios against a running MSFS with a flight loaded |
+| `mise run test:hardware` | On a connected panel: shared access both ways, startup state (blanks the displays briefly) |
 | `mise run emulator` | X-Plane emulator on port 8086, to try the app without X-Plane |
 | `mise run publish` | Self-contained builds for win-x64, linux-x64, osx-arm64 and osx-x64 |
 
