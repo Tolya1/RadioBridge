@@ -115,9 +115,15 @@ This backend uses X-Plane 12's built-in [Web API](https://developer.x-plane.com/
 | ADF1/2 | `sim/cockpit2/radios/actuators/adf{n}_frequency_hz` | kHz |
 | DME1/2 | `sim/cockpit2/radios/indicators/nav{n}_dme_distance_nm` | NM |
 | Squawk | `sim/cockpit2/radios/actuators/transponder_code` | octal digits |
-| Altimeter | `sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot` | inHg |
+| Altimeter, and standard pressure | `sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot` | inHg, two decimals |
 | Swap | `sim/radios/{com,nav}{n}_standy_flip` (Laminar's spelling) | command |
-| Standard pressure | `sim/instruments/barometer_2992` | command |
+
+**Altimeter values are written in hundredths of an inch.** X-Plane stores the setting in inHg, and a
+real altimeter moves in 0.01 steps, so a panel in hPa mode converts each whole hPa to the nearest
+hundredth (1040 hPa = 30.7105 → 30.71) rather than writing 30.711, which no altimeter can show. Every
+hPa from 900 to 1100 maps to its own value and reads back as the same hPa, so a step never stalls or
+skips (a unit test checks all 201). Standard pressure is the same write of 29.92. X-Plane's own
+`barometer_2992` command is not used: it leaves the internal 1013.25 hPa (29.92125 inHg).
 
 ### MSFS (`MsfsBackend`, Windows only)
 

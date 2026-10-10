@@ -65,22 +65,22 @@ public sealed class XPlaneBackend : ISimBackend
         switch (command)
         {
             case SetStandby c:
-                SetDataref(session, XPlaneNames.Standby(c.Radio), w => w.WriteNumber("value", XPlaneNames.FrequencyRaw(c.Radio, c.Khz)));
+                SetDataref(session, XPlaneNames.Standby(c.Radio), XPlaneNames.FrequencyRaw(c.Radio, c.Khz));
                 break;
             case SwapRadio c:
                 RunCommand(session, XPlaneNames.Flip(c.Radio));
                 break;
             case SetAdf c:
-                SetDataref(session, XPlaneNames.Adf(c.Index), w => w.WriteNumber("value", c.Khz));
+                SetDataref(session, XPlaneNames.Adf(c.Index), c.Khz);
                 break;
             case SetSquawk c:
-                SetDataref(session, XPlaneNames.Squawk, w => w.WriteNumber("value", c.Code));
+                SetDataref(session, XPlaneNames.Squawk, c.Code);
                 break;
             case SetBaro c:
-                SetDataref(session, XPlaneNames.Baro, w => w.WriteNumber("value", Math.Round(XPlaneNames.BaroRaw(c.Hpa), 3)));
+                SetDataref(session, XPlaneNames.Baro, XPlaneNames.BaroRaw(c.Hpa));
                 break;
             case SetBaroStandard:
-                RunCommand(session, XPlaneNames.BaroStandard);
+                SetDataref(session, XPlaneNames.Baro, XPlaneNames.StandardBaro);
                 break;
         }
     }
@@ -332,15 +332,23 @@ public sealed class XPlaneBackend : ISimBackend
         }
     }
 
-    private void SetDataref(Session session, string name, Action<Utf8JsonWriter> writeValue)
+    /// <summary>Writes a dataref. Whole numbers are sent as integers (the int datarefs insist on it).</summary>
+    private void SetDataref(Session session, string name, double value)
     {
         if (!session.DatarefIds.TryGetValue(name, out long id))
+        {
+            _log.LogWarning("Not writing {Name}: this X-Plane has no such dataref.", name);
             return;
+        }
+        _log.LogDebug("X-Plane <- {Name} = {Value}", name, value);
         session.Outbox.Writer.TryWrite(BuildMessage("dataref_set_values", "datarefs", w =>
         {
             w.WriteStartObject();
             w.WriteNumber("id", id);
-            writeValue(w);
+            if (value == Math.Floor(value) && Math.Abs(value) < 1e15)
+                w.WriteNumber("value", (long)value);
+            else
+                w.WriteNumber("value", value);
             w.WriteEndObject();
         }));
     }
@@ -348,7 +356,11 @@ public sealed class XPlaneBackend : ISimBackend
     private void RunCommand(Session session, string name)
     {
         if (!session.CommandIds.TryGetValue(name, out long id))
+        {
+            _log.LogWarning("Not running {Name}: this X-Plane has no such command.", name);
             return;
+        }
+        _log.LogDebug("X-Plane <- command {Name}", name);
         session.Outbox.Writer.TryWrite(BuildMessage("command_set_is_active", "commands", w =>
         {
             w.WriteStartObject();

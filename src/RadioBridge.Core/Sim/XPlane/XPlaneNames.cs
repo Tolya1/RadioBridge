@@ -10,7 +10,12 @@ internal static class XPlaneNames
 
     public const string Squawk = Actuators + "transponder_code";
     public const string Baro = "sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot";
-    public const string BaroStandard = "sim/instruments/barometer_2992";
+
+    /// <summary>
+    /// Standard pressure as an altimeter setting. X-Plane's own command sets its internal 1013.25 hPa
+    /// (29.92125 inHg), which no altimeter can be set to, so standard pressure is written as this instead.
+    /// </summary>
+    public const double StandardBaro = 29.92;
 
     // COM uses the *_hz_833 datarefs (whole kHz) so 8.33 channels survive the round trip; the plain
     // COM datarefs have 10 kHz resolution. NAV datarefs are in units of 10 kHz.
@@ -49,7 +54,7 @@ internal static class XPlaneNames
 
     public static readonly string[] Commands =
     [
-        Flip(Tunable.Com1), Flip(Tunable.Com2), Flip(Tunable.Nav1), Flip(Tunable.Nav2), BaroStandard,
+        Flip(Tunable.Com1), Flip(Tunable.Com2), Flip(Tunable.Nav1), Flip(Tunable.Nav2),
     ];
 
     /// <summary>Applies one raw dataref value to the state; unknown names leave it unchanged.</summary>
@@ -59,7 +64,13 @@ internal static class XPlaneNames
     /// <summary>Raw value for a frequency dataref.</summary>
     public static long FrequencyRaw(Tunable radio, int khz) => IsCom(radio) ? khz : khz / 10;
 
-    public static double BaroRaw(double hpa) => hpa / DisplayFormat.HpaPerInHg;
+    /// <summary>
+    /// The altimeter setting to write, in inHg with two decimals (29.92). X-Plane stores inches of mercury,
+    /// and an altimeter moves in hundredths, so a whole-hPa step (1040 hPa = 30.7105 inHg) lands on the
+    /// nearest valid value (30.71) instead of a number like 30.711. Every hPa in the allowed range maps to a
+    /// different value and reads back as the same hPa, so stepping by one hPa never stalls or skips.
+    /// </summary>
+    public static double BaroRaw(double hpa) => Math.Round(hpa / DisplayFormat.HpaPerInHg, 2);
 
     private static bool IsCom(Tunable radio) => radio is Tunable.Com1 or Tunable.Com2;
 

@@ -138,7 +138,7 @@ it clears the knob bit again, so the next detent is a new rising edge.
 
 Behind the API is a small radio model. COM radios snap to 8.33 or 25 kHz channels
 (`Com833Capable`), the `_833` and 10 kHz COM datarefs stay in sync, the flip commands swap, and
-`barometer_2992` sets 29.92. It defines its own dataref names from X-Plane's `DataRefs.txt` instead of
+`barometer_2992` sets 29.92125 like the real thing. It defines its own dataref names from X-Plane's `DataRefs.txt` instead of
 sharing RadioBridge's, so a wrong name on either side makes a test fail.
 
 Run it on its own with `mise run emulator`, which listens on port 8086 like X-Plane. Add `--com25` for

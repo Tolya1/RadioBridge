@@ -244,7 +244,8 @@ public sealed class XPlaneEmulator : IAsyncDisposable
         }
         else if (name is "sim/instruments/barometer_2992" or "sim/instruments/barometer_std")
         {
-            _byName["sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot"].Value = 29.92;
+            // X-Plane sets its internal 1013.25 hPa, i.e. 29.92125 inHg (RadioBridge writes 29.92 itself instead).
+            _byName["sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot"].Value = 29.92125;
         }
         return true;
     }

@@ -100,6 +100,30 @@ public sealed class XPlaneBackendTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Altimeter_settings_are_written_in_hundredths_of_an_inch()
+    {
+        _backend.Send(new SetBaro(1040)); // 30.7105 inHg: no altimeter can be set to 30.711
+        var set = await NextMessageAsync("dataref_set_values");
+        Assert.Equal("30.71", set.GetProperty("params").GetProperty("datarefs")[0].GetProperty("value").GetRawText());
+
+        _backend.Send(new SetBaro(1013.25));
+        set = await NextMessageAsync("dataref_set_values");
+        Assert.Equal("29.92", set.GetProperty("params").GetProperty("datarefs")[0].GetProperty("value").GetRawText());
+    }
+
+    [Fact]
+    public async Task Standard_pressure_is_written_as_2992_instead_of_the_internal_2992125()
+    {
+        _backend.Send(new SetBaroStandard());
+
+        var set = await NextMessageAsync("dataref_set_values"); // a write, not X-Plane's command, which leaves 29.92125
+        var item = set.GetProperty("params").GetProperty("datarefs")[0];
+        Assert.Equal(_xplane.IdOf("sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot"), item.GetProperty("id").GetInt64());
+        Assert.Equal("29.92", item.GetProperty("value").GetRawText());
+        await Wait.Until(() => _xplane["sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot"] == 29.92, "29.92 in X-Plane");
+    }
+
+    [Fact]
     public async Task Swap_runs_the_flip_command_once()
     {
         _backend.Send(new SwapRadio(Tunable.Com1));
@@ -208,5 +232,39 @@ public sealed class XPlaneNoticeTests : IAsyncLifetime
         await Task.Delay(800);
 
         Assert.Null(backend.Notice);
+    }
+}
+
+public sealed class XPlaneWriteLoggingTests : IAsyncLifetime
+{
+    private readonly XPlaneEmulator _xplane = new();
+    private readonly ListLogger<XPlaneBackend> _log = new();
+    private XPlaneBackend _backend = null!;
+
+    public async Task InitializeAsync()
+    {
+        await _xplane.StartAsync();
+        _backend = new XPlaneBackend(() => _xplane.Port, _log);
+        _backend.Start();
+        await Wait.Until(() => _backend.IsConnected && _backend.State.Squawk >= 0, "the backend to connect");
+    }
+
+    public async Task DisposeAsync()
+    {
+        _backend.Dispose();
+        await _xplane.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Every_write_and_command_leaves_a_line_in_the_log()
+    {
+        _backend.Send(new SetBaro(1040));
+        _backend.Send(new SetBaroStandard());
+        _backend.Send(new SetSquawk(1200));
+
+        await Wait.Until(() => _log.Messages.Count(m => m.StartsWith("X-Plane <-")) >= 3, "the log lines");
+        Assert.Contains(_log.Messages, m => m.Contains("barometer_setting_in_hg_pilot") && m.EndsWith("30.71"));
+        Assert.Contains(_log.Messages, m => m.Contains("barometer_setting_in_hg_pilot") && m.EndsWith("29.92"));
+        Assert.Contains(_log.Messages, m => m.Contains("transponder_code") && m.EndsWith("1200"));
     }
 }

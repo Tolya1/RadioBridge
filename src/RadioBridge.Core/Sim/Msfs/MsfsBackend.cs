@@ -294,7 +294,10 @@ public sealed class MsfsBackend : ISimBackend
             }
 
             while (_outbox.TryDequeue(out var message))
+            {
+                _log.LogDebug("MSFS <- {Event} {Data}", EventNames[message.Event], message.Data);
                 TransmitClientEvent(handle, ObjectIdUser, (uint)message.Event, message.Data, GroupPriorityHighest, EventFlagGroupIdIsPriority);
+            }
 
             ct.WaitHandle.WaitOne(15);
         }

@@ -116,3 +116,30 @@ public class DisplayFormatTests
     [InlineData(double.NaN, "")]
     public void Dme(double nm, string expected) => Assert.Equal(expected, DisplayFormat.Dme(nm));
 }
+
+public class XPlaneBaroValueTests
+{
+    [Theory]
+    [InlineData(1040, 30.71)]
+    [InlineData(1041, 30.74)]
+    [InlineData(1042, 30.77)]
+    [InlineData(1013.25, 29.92)]
+    [InlineData(1000, 29.53)]
+    public void Whole_hpa_becomes_the_nearest_hundredth_of_an_inch(double hpa, double expected) =>
+        Assert.Equal(expected, RadioBridge.Core.Sim.XPlane.XPlaneNames.BaroRaw(hpa), 10);
+
+    [Fact]
+    public void Every_hpa_in_the_range_is_a_valid_setting_that_reads_back_as_itself_without_stalling()
+    {
+        double previous = 0;
+        for (int hpa = 900; hpa <= 1100; hpa++)
+        {
+            double inHg = RadioBridge.Core.Sim.XPlane.XPlaneNames.BaroRaw(hpa);
+
+            Assert.True(Math.Abs(inHg * 100 - Math.Round(inHg * 100)) < 1e-9, $"{hpa} hPa -> {inHg} isn't in hundredths");
+            Assert.Equal(hpa, (int)Math.Round(inHg * DisplayFormat.HpaPerInHg)); // the display reads the same hPa back
+            Assert.True(inHg > previous, $"{hpa} hPa doesn't move the setting");   // each hPa step changes the value
+            previous = inHg;
+        }
+    }
+}
