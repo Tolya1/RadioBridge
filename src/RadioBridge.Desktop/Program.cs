@@ -57,9 +57,13 @@ internal static partial class Program
             return 0;
         }
 
-        // Two instances would fight over the panel's displays.
-        using var instance = new Mutex(initiallyOwned: true, "RadioBridge.SingleInstance", out bool first);
-        if (!first && Options.UsePhysicalPanel)
+        // One RadioBridge per user session, whatever the mode. The only exception is a test run that
+        // neither opens the panel nor serves anyone (--automation with --no-panel): it may run beside
+        // the real one, and stays out of the single-instance hand-over so it never catches a launch.
+        bool testRun = Options.AutomationPort is not null && !Options.UsePhysicalPanel;
+        bool first = true;
+        using var instance = testRun ? null : new Mutex(initiallyOwned: true, "RadioBridge.SingleInstance", out first);
+        if (!first)
         {
             if (mode == Mode.Window && SingleInstance.AskRunningToShow())
             {
@@ -69,7 +73,7 @@ internal static partial class Program
             Console.Error.WriteLine("RadioBridge is already running.");
             return 1;
         }
-        OwnsInstance = first;
+        OwnsInstance = instance is not null;
 
         return mode switch
         {

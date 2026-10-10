@@ -105,7 +105,9 @@ public sealed class AppFixture : IAsyncLifetime
     private void StartApp(int automationPort)
     {
         string dll = FindAppDll();
-        bool headless = Environment.GetEnvironmentVariable("RADIOBRIDGE_FT_UI") == "headless" || !OperatingSystem.IsWindows();
+        // Headless by default: a visible window can be closed by someone at the desk, which quits the app
+        // mid-run. RADIOBRIDGE_FT_UI=window runs the same suite with the (minimized) window.
+        bool headless = Environment.GetEnvironmentVariable("RADIOBRIDGE_FT_UI") != "window" || !OperatingSystem.IsWindows();
         var start = new ProcessStartInfo("dotnet")
         {
             ArgumentList = { dll, "--no-panel", "--automation", automationPort.ToString(), "--data-dir", RunDirectory, headless ? "--headless" : "--minimized" },
