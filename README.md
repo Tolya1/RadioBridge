@@ -270,6 +270,7 @@ run with both `--automation` and `--no-panel`, which never touches the panel (se
 | COM steps snap back to the previous value | That aircraft's radio only supports 25 kHz. Hold ACT/STBY on COM to switch to 25 kHz steps. |
 | Add-on aircraft ignores the panel | Some airliners (custom radio management panels) don't use the simulator's standard radios, so no external tool can tune them this way. Make a [debug recording](#reporting-a-problem): it shows what the aircraft does with what RadioBridge sends. |
 | Values change by themselves | Something else writes the same radios: another panel program, an add-on (a GTN, an ATC tool) or the aircraft itself. A [debug recording](#reporting-a-problem) shows which value changed when, and whether RadioBridge sent it. |
+| *X-Plane is answering slowly* | X-Plane takes seconds to act on what RadioBridge sends, so the cockpit catches up late; the panel keeps showing what you set meanwhile. RadioBridge itself handles everything within milliseconds, so the delay is outside it. Please send a [debug recording](#reporting-a-problem) and X-Plane's `Log.txt`, and say whether restarting RadioBridge makes it go away. |
 
 Logs are in the `logs` folder in the data folder (one file per day, the last 7 kept).
 

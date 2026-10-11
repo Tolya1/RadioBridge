@@ -2,6 +2,7 @@ using Microsoft.Extensions.Time.Testing;
 using RadioBridge.Core;
 using RadioBridge.Core.Panel;
 using RadioBridge.Core.Sim;
+using RadioBridge.Core.Sim.XPlane;
 
 namespace RadioBridge.Tests;
 
@@ -185,14 +186,30 @@ public class SimNoticeTests
         xplane.Warn(new SimNotice("X-Plane is too old."));
         Assert.Equal(new SimNotice("MSFS is running, but no SimConnect library was found. X-Plane is too old.", true), router.Notice);
 
+        xplane.Warn(null); // connecting means the problem is gone, as the real backends report it
         xplane.Connect(RadioState.Empty with { Squawk = 1200 });
-        Assert.Null(router.Notice); // a simulator is connected: nothing left to fix
+        Assert.Null(router.Notice); // a simulator is connected: MSFS's problem doesn't matter now
 
         xplane.Disconnect();
-        Assert.NotNull(router.Notice);
+        Assert.Equal(new SimNotice("MSFS is running, but no SimConnect library was found.", true), router.Notice);
 
         msfs.Warn(null);
+        xplane.Warn(new SimNotice("X-Plane is too old."));
         Assert.Equal(new SimNotice("X-Plane is too old."), router.Notice);
+    }
+
+    [Fact]
+    public void A_connected_simulators_own_problem_is_shown()
+    {
+        var msfs = new FakeSim("MSFS");
+        var xplane = new FakeSim("X-Plane");
+        using var router = new SimRouter([msfs, xplane]);
+        msfs.Warn(new SimNotice("MSFS can't be reached."));
+        xplane.Connect(RadioState.Empty);
+
+        xplane.Warn(XPlaneBackend.SlowNotice(31));
+
+        Assert.Contains("31 s late", router.Notice!.Text); // X-Plane's, not MSFS's
     }
 
     [Fact]

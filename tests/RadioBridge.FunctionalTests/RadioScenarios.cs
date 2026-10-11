@@ -25,6 +25,25 @@ public sealed class RadioScenarios(AppFixture fx) : IAsyncLifetime
 
     private static string Com(int khz) => DisplayFormat.Com(khz, compact: true);
 
+    /// <summary>
+    /// Waits until the simulator itself holds a value, read from X-Plane directly (the app shows what it set
+    /// before the sim answers, so its own view isn't proof). With MSFS there is no direct access: the app's view
+    /// the caller already checked has to do.
+    /// </summary>
+    private async Task SimHoldsAsync(string dataref, double expected, string what)
+    {
+        if (fx.XPlane is null)
+            return;
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        double actual;
+        while (Math.Abs((actual = await fx.XPlane.GetAsync(dataref)) - expected) > 0.001)
+        {
+            if (DateTime.UtcNow > deadline)
+                throw new TimeoutException($"Timed out waiting for {what} in the simulator: {dataref} is {actual}, not {expected}.");
+            await Task.Delay(50);
+        }
+    }
+
     /// <summary>Sets X-Plane datarefs (when the sim is reachable directly) and waits until the app sees them.</summary>
     private async Task<RadioState> GivenAsync(Func<RadioState, bool> arrived, params (string Dataref, double Value)[] values)
     {
@@ -107,6 +126,36 @@ public sealed class RadioScenarios(AppFixture fx) : IAsyncLifetime
         {
             fx.Emulator.FlipOnRelease = false;
         }
+    }
+
+    [SkippableFact]
+    public async Task A_late_xplane_keeps_the_panel_on_what_was_set_and_says_so()
+    {
+        // GitHub issue #1: an X-Plane answering 30 s late made the panel spring back, then replay every detent.
+        Skip.If(fx.Emulator is null, "Emulator only: needs an X-Plane that answers late.");
+        await App.SelectAsync(Upper, Selector.Com1);
+        await GivenAsync(s => s.Com1.StandbyKhz == 121_500, ($"{Radios}com1_standby_frequency_hz_833", 121_500));
+        int expected = Frequencies.StepComChannel(121_500, 3, ComSpacing.Khz833);
+        fx.Emulator!.RequestDelay = TimeSpan.FromSeconds(3);
+        try
+        {
+            await App.TurnAsync(Upper, Knob.Inner, +1, detents: 3);
+            await Task.Delay(1500); // well past the panel's own 800 ms hold-off
+
+            Assert.Equal(Com(expected), (await App.StateAsync()).Displays.UpperRight);          // no spring-back
+            Assert.Equal(121_500, await fx.XPlane!.GetAsync($"{Radios}com1_standby_frequency_hz_833")); // X-Plane is still behind
+            await App.WaitForAsync(s => s.Sim.Notice?.Text.Contains("answering slowly") == true, "the notice that X-Plane is slow");
+
+            await SimHoldsAsync($"{Radios}com1_standby_frequency_hz_833", expected, "X-Plane to catch up");
+            Assert.Equal(Com(expected), (await App.StateAsync()).Displays.UpperRight);
+        }
+        finally
+        {
+            fx.Emulator.RequestDelay = TimeSpan.Zero;
+        }
+
+        await App.TurnAsync(Upper, Knob.Inner, -1); // answered in time again
+        await App.WaitForAsync(s => s.Sim.Notice is null, "the notice to go", timeoutMs: 8000);
     }
 
     [Fact]

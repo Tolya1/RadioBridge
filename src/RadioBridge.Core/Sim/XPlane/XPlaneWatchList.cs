@@ -26,7 +26,8 @@ public static partial class XPlaneWatchList
     private static partial Regex AlwaysWanted();
 
     // Continuously changing instrument outputs and audio plumbing: noise in a recording about radio settings.
-    [GeneratedRegex(@"(indicators?/|hsi|_dots|bearing|cross_track|_eta|_time|speed|deflection|brightness|spill|load_ratio|volume|_led$|lites|_rx$|_tx|rx_status|tx_status|receiving|callsign|ptt|selcal|headset|mute)", RegexOptions.IgnoreCase)]
+    // Some change every frame (a GPS course, a blinking light), and X-Plane then sends a message every frame.
+    [GeneratedRegex(@"(indicators?/|hsi|_dots|bearing|cross_track|_eta|_time|speed|deflection|brightness|spill|load_ratio|volume|_led$|lites|_rx$|_tx|rx_status|tx_status|receiving|callsign|ptt|selcal|headset|mute|gps\d?_|_dir_deg|_light$|cdi|hdef|vdef|has_dme|fromto|dme_dist|_slope|marker|_dot\b)", RegexOptions.IgnoreCase)]
     private static partial Regex Noise();
 
     /// <summary>Picks the datarefs to watch from X-Plane's full list (name and value_type), leaving out <paramref name="already"/>.</summary>

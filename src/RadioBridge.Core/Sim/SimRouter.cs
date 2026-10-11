@@ -40,13 +40,15 @@ public sealed class SimRouter : ISimBackend
     public RadioState State => Active?.State ?? RadioState.Empty;
 
     /// <summary>
-    /// What keeps the real simulators from connecting (test mode doesn't count). Null while one of them is
-    /// connected, since then there is nothing to fix.
+    /// While a real simulator is connected, its own problem if it has one (X-Plane answering late). Otherwise
+    /// what keeps the real simulators from connecting (test mode doesn't count).
     /// </summary>
     public SimNotice? Notice
     {
         get
         {
+            if (Active is { } active && active != _fallback)
+                return active.Notice;
             if (_backends.Any(b => b.IsConnected))
                 return null;
             var notices = _backends.Select(b => b.Notice).OfType<SimNotice>().ToList();

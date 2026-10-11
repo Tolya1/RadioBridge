@@ -74,17 +74,18 @@ public sealed class Recorder : IDisposable
             // Shared for reading, so the file can be opened while it is being written.
             var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
             var session = new Session(path, stream, Stopwatch.GetTimestamp());
-            session.Writer = Task.Run(() => WriteLoopAsync(session));
-            _session = session;
-            FilePath = path;
             var removed = RemoveOldRecordings(directory, path);
-            Record("recorder", "start", w =>
+            // The header is queued before the session is visible to other threads, so it is always the first line.
+            session.Queue.Writer.TryWrite(Format(session, "recorder", "start", w =>
             {
                 w.WriteString("started", DateTimeOffset.Now.ToString("o", Inv));
                 if (removed > 0)
                     w.WriteNumber("removedOldRecordings", removed);
                 header?.Invoke(w);
-            });
+            }));
+            session.Writer = Task.Run(() => WriteLoopAsync(session));
+            _session = session;
+            FilePath = path;
         }
         Changed?.Invoke();
         return FilePath!;
@@ -155,7 +156,12 @@ public sealed class Recorder : IDisposable
         var session = _session;
         if (session is null)
             return;
+        session.Queue.Writer.TryWrite(Format(session, source, ev, fields));
+    }
 
+    /// <summary>One line: the common fields, then the event's own.</summary>
+    private static byte[] Format(Session session, string source, string ev, Action<Utf8JsonWriter>? fields)
+    {
         var buffer = new ArrayBufferWriter<byte>(256);
         using (var w = new Utf8JsonWriter(buffer))
         {
@@ -176,7 +182,7 @@ public sealed class Recorder : IDisposable
             w.WriteEndObject();
         }
         buffer.Write("\n"u8);
-        session.Queue.Writer.TryWrite(buffer.WrittenSpan.ToArray());
+        return buffer.WrittenSpan.ToArray();
     }
 
     private async Task WriteLoopAsync(Session session)

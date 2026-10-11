@@ -58,10 +58,21 @@ public sealed class XPlaneBackend : ISimBackend
 
     public string Name => "X-Plane";
     public bool IsConnected => _session is not null;
-    public RadioState State => _state;
 
-    /// <summary>Set only for problems that are certainly X-Plane's: a refusal, or a version that is too old.</summary>
-    public SimNotice? Notice => Volatile.Read(ref _notice);
+    /// <summary>X-Plane's values, with what RadioBridge set and X-Plane hasn't answered yet laid over them (<see cref="XPlaneRequests"/>).</summary>
+    public RadioState State => _session is { } session ? session.Requests.Apply(_state) : _state;
+
+    /// <summary>
+    /// Set only for problems that are certainly X-Plane's: a refusal, a version that is too old, or answering so
+    /// late that changes reach the cockpit seconds after they were made.
+    /// </summary>
+    public SimNotice? Notice => _session is { } session && session.Requests.SlowSeconds() is double late
+        ? SlowNotice(late)
+        : Volatile.Read(ref _notice);
+
+    internal static SimNotice SlowNotice(double seconds) => new(
+        $"X-Plane is answering slowly: changes reach the cockpit about {Math.Max(2, Math.Round(seconds)):0} s late. " +
+        "The panel keeps showing what you set until X-Plane catches up.");
 
     public event Action? Changed;
 
@@ -85,7 +96,11 @@ public sealed class XPlaneBackend : ISimBackend
                 SetDataref(session, XPlaneNames.Standby(c.Radio), XPlaneNames.FrequencyRaw(c.Radio, c.Khz));
                 break;
             case SwapRadio c:
-                RunCommand(session, XPlaneNames.Flip(c.Radio));
+                // Laid over X-Plane's values as the pair the swap should produce (not as "swap whatever is
+                // there", which would undo the swap once X-Plane has made it).
+                var pair = State.Get(c.Radio);
+                var swapped = new RadioPair(pair.StandbyKhz, pair.ActiveKhz);
+                RunCommand(session, XPlaneNames.Flip(c.Radio), s => s.With(c.Radio, swapped));
                 break;
             case SetAdf c:
                 SetDataref(session, XPlaneNames.Adf(c.Index), c.Khz);
@@ -184,6 +199,7 @@ public sealed class XPlaneBackend : ISimBackend
         Subscribe(session, datarefs.Values);
 
         var sender = SendLoopAsync(session, sessionCts.Token);
+        var watchdog = WatchAnswersAsync(session, sessionCts.Token);
         _session = session;
         _warnedForbidden = false; // warn again should it ever be refused again
         _warnedUnsupported = false;
@@ -211,6 +227,7 @@ public sealed class XPlaneBackend : ISimBackend
             _state = RadioState.Empty;
             await sessionCts.CancelAsync();
             try { await sender; } catch (Exception) { /* the socket is gone anyway */ }
+            try { await watchdog; } catch (OperationCanceledException) { }
             _recorder.Record("xplane", "disconnected");
             Changed?.Invoke();
         }
@@ -226,8 +243,9 @@ public sealed class XPlaneBackend : ISimBackend
         w.WriteEndObject();
     }
 
-    private void Subscribe(Session session, IEnumerable<long> ids, bool subscribe = true) =>
-        session.Outbox.Writer.TryWrite(BuildMessage(subscribe ? "dataref_subscribe_values" : "dataref_unsubscribe_values", "datarefs", w =>
+    private void Subscribe(Session session, IEnumerable<long> ids, bool subscribe = true)
+    {
+        var (message, request) = BuildMessage(subscribe ? "dataref_subscribe_values" : "dataref_unsubscribe_values", "datarefs", w =>
         {
             foreach (long id in ids)
             {
@@ -235,7 +253,37 @@ public sealed class XPlaneBackend : ISimBackend
                 w.WriteNumber("id", id);
                 w.WriteEndObject();
             }
-        }));
+        });
+        session.Requests.Sent(request); // before it can be answered
+        session.Outbox.Writer.TryWrite(message);
+    }
+
+    /// <summary>
+    /// Notices when X-Plane starts or stops answering late, so the log and the recording say when, and the
+    /// window's notice appears without waiting for the next value.
+    /// </summary>
+    private async Task WatchAnswersAsync(Session session, CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
+        bool slow = false;
+        while (await timer.WaitForNextTickAsync(ct))
+        {
+            double? late = session.Requests.SlowSeconds();
+            if ((late is not null) == slow)
+                continue;
+            slow = late is not null;
+            if (slow)
+                _log.LogWarning("X-Plane is answering {Seconds:0.0} s late.", late);
+            else
+                _log.LogInformation("X-Plane answers in time again.");
+            _recorder.Record("xplane", slow ? "slow" : "caught-up", w =>
+            {
+                if (late is double seconds)
+                    w.WriteNumber("seconds", Math.Round(seconds, 1));
+            });
+            Changed?.Invoke();
+        }
+    }
 
     private void OnRecordingChanged()
     {
@@ -434,12 +482,15 @@ public sealed class XPlaneBackend : ISimBackend
                 string request = root.TryGetProperty("req_id", out var req) ? req.ToString() : "?";
                 string? error = root.TryGetProperty("error_code", out var code) ? code.GetString() : null;
                 string? message = root.TryGetProperty("error_message", out var msg) ? msg.GetString() : null;
+                var lag = int.TryParse(request, out int requestId) ? session.Requests.Answered(requestId, success) : null;
                 if (!success)
                     _log.LogWarning("X-Plane rejected request {Id}: {Code} {Message}", request, error ?? "?", message ?? "");
                 _recorder.Record("xplane", "result", w =>
                 {
                     w.WriteString("req", request);
                     w.WriteBoolean("success", success);
+                    if (lag is { } took)
+                        w.WriteNumber("lagMs", Math.Round(took.TotalMilliseconds, 1)); // from queueing the request to this answer
                     if (!success)
                     {
                         w.WriteString("error", error);
@@ -510,7 +561,10 @@ public sealed class XPlaneBackend : ISimBackend
         }
     }
 
-    /// <summary>Writes a dataref. Whole numbers are sent as integers (the int datarefs insist on it).</summary>
+    /// <summary>
+    /// Writes a dataref. Writes to one dataref closer together than <see cref="XPlaneRequests.CoalesceWindow"/>
+    /// are merged: during a fast spin only the newest value goes out every 100 ms, not one per detent.
+    /// </summary>
     private void SetDataref(Session session, string name, double value)
     {
         if (!session.DatarefIds.TryGetValue(name, out long id))
@@ -518,9 +572,49 @@ public sealed class XPlaneBackend : ISimBackend
             _log.LogWarning("Not writing {Name}: this X-Plane has no such dataref.", name);
             return;
         }
+        Func<RadioState, RadioState> apply = s => XPlaneNames.Apply(s, name, value);
+        lock (session.SendGate)
+        {
+            var later = session.Requests.PlanWrite(name, value, apply);
+            if (later is null)
+            {
+                SendSet(session, name, id, value, apply);
+                return;
+            }
+            if (later > TimeSpan.Zero)
+                _ = SendHeldBackAsync(session, name, id, later.Value);
+            _recorder.Record("xplane", "held", w =>
+            {
+                w.WriteString("dataref", name);
+                w.WriteNumber("value", value);
+            });
+        }
+    }
+
+    /// <summary>Sends the newest held-back value of a dataref once the coalescing window is over.</summary>
+    private async Task SendHeldBackAsync(Session session, string name, long id, TimeSpan delay)
+    {
+        try
+        {
+            await Task.Delay(delay, session.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        lock (session.SendGate)
+        {
+            if (session.Requests.TakeQueued(name) is { } queued)
+                SendSet(session, name, id, queued.Value, expectation: queued.Expectation);
+        }
+    }
+
+    /// <summary>Sends one write (under <see cref="Session.SendGate"/>). Whole numbers go as integers (the int datarefs insist on it).</summary>
+    private void SendSet(Session session, string name, long id, double value, Func<RadioState, RadioState>? apply = null,
+        XPlaneRequests.Expectation? expectation = null)
+    {
         _log.LogDebug("X-Plane <- {Name} = {Value}", name, value);
-        int request = 0;
-        session.Outbox.Writer.TryWrite(BuildMessage("dataref_set_values", "datarefs", w =>
+        var (message, request) = BuildMessage("dataref_set_values", "datarefs", w =>
         {
             w.WriteStartObject();
             w.WriteNumber("id", id);
@@ -529,7 +623,9 @@ public sealed class XPlaneBackend : ISimBackend
             else
                 w.WriteNumber("value", value);
             w.WriteEndObject();
-        }, id => request = id));
+        });
+        session.Requests.Sent(request, name, apply, expectation); // before it can be answered
+        session.Outbox.Writer.TryWrite(message);
         _recorder.Record("xplane", "set", w =>
         {
             w.WriteNumber("req", request);
@@ -538,7 +634,8 @@ public sealed class XPlaneBackend : ISimBackend
         });
     }
 
-    private void RunCommand(Session session, string name)
+    /// <param name="apply">What the command does to the radios, laid over X-Plane's values until it is answered.</param>
+    private void RunCommand(Session session, string name, Func<RadioState, RadioState>? apply = null)
     {
         if (!session.CommandIds.TryGetValue(name, out long id))
         {
@@ -546,30 +643,33 @@ public sealed class XPlaneBackend : ISimBackend
             return;
         }
         _log.LogDebug("X-Plane <- command {Name}", name);
-        int request = 0;
-        session.Outbox.Writer.TryWrite(BuildMessage("command_set_is_active", "commands", w =>
+        lock (session.SendGate)
         {
-            w.WriteStartObject();
-            w.WriteNumber("id", id);
-            w.WriteBoolean("is_active", true);
-            w.WriteNumber("duration", PressSeconds); // X-Plane releases it after this long
-            w.WriteEndObject();
-        }, id => request = id));
-        _recorder.Record("xplane", "command", w =>
-        {
-            w.WriteNumber("req", request);
-            w.WriteString("command", name);
-            w.WriteNumber("pressSeconds", PressSeconds);
-        });
+            var (message, request) = BuildMessage("command_set_is_active", "commands", w =>
+            {
+                w.WriteStartObject();
+                w.WriteNumber("id", id);
+                w.WriteBoolean("is_active", true);
+                w.WriteNumber("duration", PressSeconds); // X-Plane releases it after this long
+                w.WriteEndObject();
+            });
+            session.Requests.Sent(request, apply: apply);
+            session.Outbox.Writer.TryWrite(message);
+            _recorder.Record("xplane", "command", w =>
+            {
+                w.WriteNumber("req", request);
+                w.WriteString("command", name);
+                w.WriteNumber("pressSeconds", PressSeconds);
+            });
+        }
     }
 
-    private byte[] BuildMessage(string type, string listName, Action<Utf8JsonWriter> writeItems, Action<int>? requestId = null)
+    private (byte[] Message, int Request) BuildMessage(string type, string listName, Action<Utf8JsonWriter> writeItems)
     {
         var buffer = new ArrayBufferWriter<byte>();
+        int id = Interlocked.Increment(ref _requestId);
         using (var w = new Utf8JsonWriter(buffer))
         {
-            int id = Interlocked.Increment(ref _requestId);
-            requestId?.Invoke(id);
             w.WriteStartObject();
             w.WriteNumber("req_id", id);
             w.WriteString("type", type);
@@ -580,7 +680,7 @@ public sealed class XPlaneBackend : ISimBackend
             w.WriteEndObject();
             w.WriteEndObject();
         }
-        return buffer.WrittenSpan.ToArray();
+        return (buffer.WrittenSpan.ToArray(), id);
     }
 
     public void Dispose()
@@ -602,6 +702,12 @@ public sealed class XPlaneBackend : ISimBackend
         public IReadOnlyDictionary<long, string> DatarefNames { get; } = datarefIds.ToDictionary(p => p.Value, p => p.Key);
         public IReadOnlyDictionary<string, long> CommandIds { get; } = commandIds;
         public Channel<byte[]> Outbox { get; } = Channel.CreateUnbounded<byte[]>(new UnboundedChannelOptions { SingleReader = true });
+
+        /// <summary>Requests in flight, coalesced writes, and values X-Plane hasn't answered yet.</summary>
+        public XPlaneRequests Requests { get; } = new();
+
+        /// <summary>Keeps writes and commands in the order they were decided, held-back writes included.</summary>
+        public object SendGate { get; } = new();
 
         /// <summary>Ends with the connection.</summary>
         public CancellationToken Token { get; } = token;

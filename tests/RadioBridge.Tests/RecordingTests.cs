@@ -68,6 +68,27 @@ public sealed class RecorderTests : IDisposable
     }
 
     [Fact]
+    public async Task The_start_line_comes_first_even_while_other_threads_are_recording()
+    {
+        using var recorder = new Recorder();
+        using var stop = new CancellationTokenSource();
+        var busy = Task.Run(() =>
+        {
+            while (!stop.IsCancellationRequested)
+                recorder.Record("controller", "displays");
+        });
+
+        string file = recorder.Start(_folder.Path);
+        await Task.Delay(50);
+        await stop.CancelAsync();
+        await busy;
+        recorder.Stop();
+
+        var first = TempFolder.ReadEvents(file)[0];
+        Assert.Equal(("recorder", "start"), (first.GetProperty("src").GetString(), first.GetProperty("ev").GetString()));
+    }
+
+    [Fact]
     public void Records_nothing_and_creates_no_file_while_off()
     {
         using var recorder = new Recorder();
@@ -195,6 +216,10 @@ public sealed class XPlaneWatchListTests
     [InlineData("simcoders/rep/avionics/bendixking/kx165atso/com_1_volume", "float")]
     [InlineData("xpilot/com1_station_callsign", "data")]
     [InlineData("librain/glass_0/thrust", "float")]
+    [InlineData("sim/cockpit/radios/gps_dir_degt", "float")]     // change every frame: X-Plane would send a message every frame
+    [InlineData("sim/cockpit/radios/gps2_dir_degt", "float")]
+    [InlineData("sim/cockpit/radios/transponder_light", "int")]
+    [InlineData("sim/cockpit/radios/nav1_dir_degt", "float")]
     public void Leaves_out_everything_else(string name, string type) =>
         Assert.False(XPlaneWatchList.Wanted(name, type), name);
 

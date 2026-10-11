@@ -128,6 +128,21 @@ This backend uses X-Plane 12's built-in [Web API](https://developer.x-plane.com/
 | Altimeter, and standard pressure | `sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot` | inHg |
 | Swap | `sim/radios/{com,nav}{n}_standy_flip` (Laminar's spelling) | command, held 150 ms |
 
+**When X-Plane answers late.** X-Plane answers every request with a `result` message, normally within a
+frame or two. One user's X-Plane answered about 30 s late, in order (GitHub issue #1): every knob change
+sprang back once the controller's 800 ms hold-off ended, and half a minute later X-Plane replayed each
+detent, so the values seemed to change by themselves. `XPlaneRequests` keeps the books per connection:
+
+- **Writes are coalesced.** Writes to one dataref less than 100 ms apart are merged, so a fast spin sends
+  the newest value every 100 ms instead of one message per detent.
+- **What was set stays shown until X-Plane answers.** The backend's `State` lays every write and swap that
+  X-Plane hasn't answered (and, for 500 ms after the answer, while the value travels back) over X-Plane's
+  values. A swap is laid over as the pair it should produce, so it can't be undone once X-Plane has made it.
+  A refused write is dropped at once.
+- **The user is told.** When an answer is more than 2 s late (or a request has waited that long), the
+  backend's `Notice` says how late, and the window shows it while X-Plane is connected. It goes as soon as
+  an answer comes in time. The recording has each answer's delay (`lagMs`) and `slow`/`caught-up` events.
+
 **Altimeter values are the exact setting plus a tiny margin.** X-Plane stores the setting in inHg as a
 32-bit float. A knob step in hPa writes that whole hPa exactly (1040 hPa = 30.7112 inHg, which is what
 X-Plane's own knob stores), and a step in inHg writes the two-decimal value (29.91). Some cockpits draw
@@ -212,7 +227,7 @@ the window is the picture. Details that matter:
 | `panel` | `report` (raw input bytes; `current` for the state read at connection), `displays` (the display report when it changes), `input` (decoded), `connected` | `HidRadioPanel`, `PanelController` |
 | `controller` | `tune` (from, to, steps, acceleration), `swap`, `focus`, `hold`, `ignored` (and why), `unconfirmed` (a value the sim didn't take within the hold-off), `displays` (the four texts) | `PanelController` |
 | `sim` | `active`, `state` (the radios in RadioBridge's units), `notice` | `SimRouter` |
-| `xplane` | `connected` (version, dataref and command ids), `watching`, `values` (by dataref name), `set`, `command`, `result` (X-Plane's reply to each request) | `XPlaneBackend` |
+| `xplane` | `connected` (version, dataref and command ids), `watching`, `values` (by dataref name), `set`, `held` (a write merged into a later one), `command`, `result` (X-Plane's reply to each request, with `lagMs`), `slow` / `caught-up` | `XPlaneBackend` |
 | `msfs` | `connected` (the library), `values` (SimVars by name), `event`, `exception`, `quit` | `MsfsBackend` |
 | `settings`, `log`, `recorder` | settings changes, every log line (debug and up, via `RecorderLoggerProvider`), start (version, OS, settings) and stop | `BridgeHost`, the logger |
 

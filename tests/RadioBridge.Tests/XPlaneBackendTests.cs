@@ -93,8 +93,11 @@ public sealed class XPlaneBackendTests : IAsyncLifetime
         _backend.Send(new SetAdf(2, 415));
         _backend.Send(new SetBaro(1000));
 
+        // RadioBridge shows what it set at once; X-Plane having it is the proof.
+        await Wait.Until(() => _xplane["sim/cockpit2/radios/actuators/transponder_code"] == 1200
+                               && _xplane["sim/cockpit2/radios/actuators/adf2_frequency_hz"] == 415
+                               && Math.Abs(_xplane["sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot"] - 29.53) < 0.001, "the values in X-Plane");
         await Wait.Until(() => _backend.State is { Squawk: 1200, Adf2Khz: 415 } s && Math.Abs(s.BaroHpa - 1000) < 0.1, "the values to round-trip");
-        Assert.Equal(29.53, _xplane["sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot"], 2);
 
         _backend.Send(new SetBaroStandard());
         await Wait.Until(() => Math.Abs(_backend.State.BaroHpa - 1013.2) < 0.1, "standard pressure");
@@ -138,6 +141,7 @@ public sealed class XPlaneBackendTests : IAsyncLifetime
         Assert.Equal(_xplane.IdOf("sim/radios/com1_standy_flip"), command.GetProperty("id").GetInt64());
         Assert.True(command.GetProperty("is_active").GetBoolean());
         Assert.Equal(0.15, command.GetProperty("duration").GetDouble()); // held, so radios that act on release see a press
+        await Wait.Until(() => _xplane["sim/cockpit2/radios/actuators/com1_frequency_hz_833"] == 121_500, "X-Plane to swap");
         await Wait.Until(() => _backend.State.Com1 == new RadioPair(121_500, 118_000), "the swapped radio");
     }
 
@@ -148,7 +152,7 @@ public sealed class XPlaneBackendTests : IAsyncLifetime
 
         _backend.Send(new SwapRadio(Tunable.Com2));
 
-        await Wait.Until(() => _backend.State.Com2 == new RadioPair(119_250, 122_800), "COM2 to swap on release");
+        await Wait.Until(() => _xplane["sim/cockpit2/radios/actuators/com2_frequency_hz_833"] == 119_250, "COM2 to swap on release");
     }
 
     [Fact]
@@ -282,6 +286,112 @@ public sealed class XPlaneWriteLoggingTests : IAsyncLifetime
         Assert.Contains(_log.Messages, m => m.Contains("barometer_setting_in_hg_pilot = 30.711"));
         Assert.Contains(_log.Messages, m => m.Contains("barometer_setting_in_hg_pilot = 29.92005"));
         Assert.Contains(_log.Messages, m => m.Contains("transponder_code") && m.EndsWith("1200"));
+    }
+}
+
+/// <summary>
+/// An X-Plane that answers requests late, in order (GitHub issue #1 recorded 30 s): the panel must not spring
+/// back and then replay every detent, and the user should learn why the cockpit lags.
+/// </summary>
+public sealed class XPlaneLateAnswerTests : IAsyncLifetime
+{
+    private const string Standby = "sim/cockpit2/radios/actuators/com1_standby_frequency_hz_833";
+
+    private readonly XPlaneEmulator _xplane = new();
+    private XPlaneBackend _backend = null!;
+
+    public async Task InitializeAsync()
+    {
+        await _xplane.StartAsync();
+        _backend = new XPlaneBackend(() => _xplane.Port);
+        _backend.Start();
+        await Wait.Until(() => _backend.IsConnected && _backend.State.Squawk >= 0, "the backend to connect");
+    }
+
+    public async Task DisposeAsync()
+    {
+        _backend.Dispose();
+        await _xplane.DisposeAsync();
+    }
+
+    private List<long> WritesTo(string dataref)
+    {
+        var values = new List<long>();
+        while (_xplane.Received.TryRead(out var message))
+        {
+            if (message.GetProperty("type").GetString() != "dataref_set_values")
+                continue;
+            foreach (var item in message.GetProperty("params").GetProperty("datarefs").EnumerateArray())
+            {
+                if (item.GetProperty("id").GetInt64() == _xplane.IdOf(dataref))
+                    values.Add(item.GetProperty("value").GetInt64());
+            }
+        }
+        return values;
+    }
+
+    [Fact]
+    public async Task A_fast_spin_sends_a_few_values_not_one_per_detent()
+    {
+        for (int khz = 121_505; khz <= 121_600; khz += 5) // 20 detents, 10 ms apart
+        {
+            _backend.Send(new SetStandby(Tunable.Com1, khz));
+            await Task.Delay(10);
+        }
+
+        await Wait.Until(() => _xplane[Standby] == 121_600, "the last value in X-Plane");
+        var writes = WritesTo(Standby);
+        Assert.InRange(writes.Count, 2, 6);
+        Assert.Equal(121_600, writes[^1]);
+    }
+
+    [Fact]
+    public async Task What_was_set_stays_shown_while_x_plane_has_not_answered()
+    {
+        _xplane.RequestDelay = TimeSpan.FromSeconds(1.5);
+
+        _backend.Send(new SetStandby(Tunable.Com1, 121_525));
+
+        Assert.Equal(121_525, _backend.State.Com1.StandbyKhz); // at once
+        await Task.Delay(1000);
+        Assert.Equal(121_500, _xplane[Standby]);                 // X-Plane hasn't got to it...
+        Assert.Equal(121_525, _backend.State.Com1.StandbyKhz); // ...and the panel doesn't spring back
+        await Wait.Until(() => _xplane[Standby] == 121_525, "X-Plane to catch up");
+        await Task.Delay(800);
+        Assert.Equal(121_525, _backend.State.Com1.StandbyKhz); // now X-Plane's own value
+    }
+
+    [Fact]
+    public async Task A_late_x_plane_raises_a_notice_that_goes_once_it_answers_in_time()
+    {
+        _xplane.RequestDelay = TimeSpan.FromSeconds(3);
+        _backend.Send(new SetSquawk(1200));
+
+        await Wait.Until(() => _backend.Notice is not null, "the notice");
+        Assert.Contains("answering slowly", _backend.Notice!.Text);
+
+        _xplane.RequestDelay = TimeSpan.Zero;
+        await Wait.Until(() => _xplane["sim/cockpit2/radios/actuators/transponder_code"] == 1200, "the late answer");
+        _backend.Send(new SetSquawk(7000)); // answered in time
+
+        await Wait.Until(() => _backend.Notice is null, "the notice to go");
+    }
+
+    [Fact]
+    public async Task A_swap_x_plane_has_not_answered_stays_shown_without_being_undone_once_it_happens()
+    {
+        _xplane.RequestDelay = TimeSpan.FromSeconds(1);
+
+        _backend.Send(new SwapRadio(Tunable.Com1));
+
+        var swapped = new RadioPair(121_500, 118_000);
+        Assert.Equal(swapped, _backend.State.Com1);
+        await Wait.Until(() => _xplane[Standby] == 118_000, "X-Plane to swap");
+        for (int i = 0; i < 10; i++) // through the grace after the answer, when both are laid over each other
+        {
+            Assert.Equal(swapped, _backend.State.Com1);
+            await Task.Delay(100);
+        }
     }
 }
 

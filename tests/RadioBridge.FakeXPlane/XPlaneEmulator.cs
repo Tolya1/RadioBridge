@@ -85,6 +85,12 @@ public sealed class XPlaneEmulator : IAsyncDisposable
     /// </summary>
     public bool FlipOnRelease { get; set; }
 
+    /// <summary>
+    /// Handles every WebSocket request this long after it arrived, in order, while value pushes go on as
+    /// usual: like an X-Plane seen answering 30 s late (GitHub issue #1).
+    /// </summary>
+    public TimeSpan RequestDelay { get; set; }
+
     /// <summary>One frame at 30 fps: shorter presses don't count with <see cref="FlipOnRelease"/>.</summary>
     public static readonly TimeSpan Frame = TimeSpan.FromMilliseconds(33);
 
@@ -313,6 +319,18 @@ public sealed class XPlaneEmulator : IAsyncDisposable
     private async Task ServeAsync(Client client, CancellationToken ct)
     {
         _clients[client] = 0;
+        // Requests are handled in arrival order, each RequestDelay after it arrived (usually at once).
+        var inbox = Channel.CreateUnbounded<(DateTime Due, JsonElement Request)>(new UnboundedChannelOptions { SingleReader = true });
+        var handler = Task.Run(async () =>
+        {
+            await foreach (var (due, request) in inbox.Reader.ReadAllAsync(ct))
+            {
+                var wait = due - DateTime.UtcNow;
+                if (wait > TimeSpan.Zero)
+                    await Task.Delay(wait, ct);
+                await client.SendAsync(Handle(client, request), ct);
+            }
+        }, ct);
         try
         {
             var buffer = new byte[64 * 1024];
@@ -333,7 +351,7 @@ public sealed class XPlaneEmulator : IAsyncDisposable
                 using var doc = JsonDocument.Parse(message.ToArray());
                 var root = doc.RootElement.Clone();
                 await _received.Writer.WriteAsync(root, ct);
-                await client.SendAsync(Handle(client, root), ct);
+                inbox.Writer.TryWrite((DateTime.UtcNow + RequestDelay, root));
             }
         }
         catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException)
@@ -341,6 +359,8 @@ public sealed class XPlaneEmulator : IAsyncDisposable
         }
         finally
         {
+            inbox.Writer.TryComplete();
+            try { await handler; } catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException) { }
             _clients.TryRemove(client, out _);
         }
     }

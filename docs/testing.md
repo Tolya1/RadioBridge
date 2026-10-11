@@ -92,6 +92,8 @@ there first when a scenario fails. The failure message also includes the last di
 - The app survives the simulator quitting and restarting (emulator only).
 - An X-Plane that refuses connections is explained in a notice, which goes away once it is fixed
   (emulator only).
+- An X-Plane that answers late (3 s here; 30 s in GitHub issue #1) doesn't make the panel spring back:
+  it keeps what was set, says X-Plane is slow, and X-Plane ends up with the right value (emulator only).
 - A debug recording of a knob turn and two swaps holds the whole story: the panel input, the
   controller's decisions, the displays, what went to the simulator and its replies, the values that
   came back by name, and the log.
@@ -159,12 +161,14 @@ it clears the knob bit again, so the next detent is a new rising edge.
 Behind the API is a small radio model. COM radios snap to 8.33 or 25 kHz channels
 (`Com833Capable`), the `_833` and 10 kHz COM datarefs stay in sync, the flip commands swap, and
 `barometer_2992` sets 29.92125 like the real thing. With `FlipOnRelease` the radios behave like REP's
-KX165: they swap when a held flip command is released, and ignore a press shorter than a frame.
+KX165: they swap when a held flip command is released, and ignore a press shorter than a frame. With
+`RequestDelay` every WebSocket request is handled that much later, in order, like an X-Plane that has
+fallen behind.
 `AddDataref` adds datarefs such as an add-on's, for the recording's watch list. It defines its own
 dataref names from X-Plane's `DataRefs.txt` instead of sharing RadioBridge's, so a wrong name on
 either side makes a test fail.
 
 Run it on its own with `mise run emulator`, which listens on port 8086 like X-Plane. Add `--com25` for
-25 kHz-only radios, `--flip-on-release` for REP-style radios, `--refuse` to act like X-Plane with
+25 kHz-only radios, `--flip-on-release` for REP-style radios, `--lag 30` to answer 30 s late, `--refuse` to act like X-Plane with
 "Disable incoming traffic" on (to see the window's notice banner), or `--api1` to act like an X-Plane
 too old for Web API v2.
