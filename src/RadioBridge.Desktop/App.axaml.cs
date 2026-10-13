@@ -37,6 +37,8 @@ public partial class App : Application
             var loggers = Program.CreateLoggers(options.LogDirectory, console: false, recorder);
             var log = _log = loggers.CreateLogger<App>();
             log.LogInformation("RadioBridge {Version} starting on {OS}.", typeof(App).Assembly.GetName().Version, Environment.OSVersion);
+            if (Program.Replaced is { } replaced)
+                log.LogInformation("Took over from RadioBridge {Older}, which made way for this newer version.", replaced);
 
             var host = new BridgeHost(options, loggers, () => Dispatcher.UIThread.Post(() => Quit("automation request")), recorder);
             var settings = _settings = host.Settings;
@@ -80,7 +82,12 @@ public partial class App : Application
                     DispatcherPriority.Background);
             }
             if (Program.OwnsInstance)
-                SingleInstance.Listen(() => Dispatcher.UIThread.Post(ShowWindow), _stop.Token);
+            {
+                SingleInstance.Listen(Program.AppVersion,
+                    show: () => Dispatcher.UIThread.Post(ShowWindow),
+                    quitForNewer: newer => Dispatcher.UIThread.Post(() => Quit($"RadioBridge {newer} is starting")),
+                    _stop.Token);
+            }
         }
 
         base.OnFrameworkInitializationCompleted();

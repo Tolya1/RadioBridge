@@ -240,7 +240,9 @@ icon to bring it back, and use its menu for **Test mode**, **Record debug log** 
 in the hidden-icons overflow (`^`), so drag the icon onto the taskbar to keep it in sight.
 
 Launching RadioBridge while it is already running brings the running window to the front, even when
-it is hidden in the tray.
+it is hidden in the tray. **Launching a newer version replaces the running one:** it quits and the new
+one starts, so a new download can simply be started. (Versions up to 0.1.4 can't be asked to quit, so
+a newer one stops them.)
 
 ## Settings
 
@@ -291,7 +293,8 @@ to the terminal they were started from. `--readme` and `--licenses` are for wher
 (Linux without a desktop, a sim PC you only reach over SSH): they print the same texts as the buttons.
 
 Only **one RadioBridge** runs at a time, in any mode. Launching it again brings the running window to
-the front, and a second `--headless` or `--panel-test` refuses to start. The one exception is a test
+the front, and a second `--headless` or `--panel-test` refuses to start, unless it is a newer version:
+then the running one makes way for it. The one exception is a test
 run with both `--automation` and `--no-panel`, which never touches the panel (see
 [docs/testing.md](docs/testing.md)).
 

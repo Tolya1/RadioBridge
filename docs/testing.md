@@ -90,6 +90,11 @@ there first when a scenario fails. The failure message also includes the last di
 - Knob turns, a held ACT/STBY and a long press are reported for the window's knob and switch view.
 - Test mode drives the panel without a simulator and steps aside when one connects (emulator only).
 - The app survives the simulator quitting and restarting (emulator only).
+- A newer launch replaces the running RadioBridge and an older one leaves it running, with real processes
+  in headless and window mode. These copies run under a test instance of their own
+  (`RADIOBRIDGE_TEST_INSTANCE`, with `RADIOBRIDGE_TEST_VERSION` as their version), so they never meet the
+  RadioBridge you are running. Stopping 0.1.4 and older (which can't be asked) is only unit-tested: the
+  pipe they listen on is recognised, and only an older RadioBridge's executable is ever stopped.
 - An X-Plane that refuses connections is explained in a notice, which goes away once it is fixed
   (emulator only).
 - An X-Plane that answers late (3 s here; 30 s in GitHub issue #1) doesn't make the panel spring back:

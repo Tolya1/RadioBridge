@@ -37,6 +37,19 @@ internal static partial class Program
     /// <summary>This is the main instance, so later launches should be routed to its window.</summary>
     public static bool OwnsInstance { get; private set; }
 
+    /// <summary>
+    /// This build's version (major.minor.patch), which decides who makes way when another RadioBridge runs. Tests
+    /// set another with RADIOBRIDGE_TEST_VERSION, together with <see cref="SingleInstance.TestInstanceVariable"/>.
+    /// </summary>
+    public static Version AppVersion { get; } =
+        (Environment.GetEnvironmentVariable(SingleInstance.TestInstanceVariable) is { Length: > 0 }
+            ? SingleInstance.ParseVersion(Environment.GetEnvironmentVariable("RADIOBRIDGE_TEST_VERSION"))
+            : null)
+        ?? SingleInstance.Normalize(typeof(Program).Assembly.GetName().Version ?? new Version(0, 0));
+
+    /// <summary>The older RadioBridge this launch replaced, for the log; null when there was none.</summary>
+    public static string? Replaced { get; private set; }
+
     // Don't use Avalonia, third-party APIs or SynchronizationContext-reliant code before AppMain is
     // called: things aren't initialized yet.
     [STAThread]
@@ -74,25 +87,77 @@ internal static partial class Program
         // the real one, and stays out of the single-instance hand-over so it never catches a launch.
         bool testRun = Options.AutomationPort is not null && !Options.UsePhysicalPanel;
         bool first = true;
-        using var instance = testRun ? null : new Mutex(initiallyOwned: true, "RadioBridge.SingleInstance", out first);
-        if (!first)
-        {
-            if (mode == Mode.Window && SingleInstance.AskRunningToShow())
-            {
-                Console.WriteLine("RadioBridge is already running; its window was brought to the front.");
-                return 0;
-            }
-            Console.Error.WriteLine("RadioBridge is already running.");
-            return 1;
-        }
+        using var instance = testRun ? null : new Mutex(initiallyOwned: true, SingleInstance.MutexName, out first);
+        if (!first && TakeOver(instance!, mode) is int exitCode)
+            return exitCode;
         OwnsInstance = instance is not null;
 
-        return mode switch
+        try
         {
-            Mode.Headless => RunHeadless(),
-            Mode.PanelTest => RunPanelTest(),
-            _ => BuildAvaloniaApp().StartWithClassicDesktopLifetime(args),
-        };
+            return mode switch
+            {
+                Mode.Headless => RunHeadless(),
+                Mode.PanelTest => RunPanelTest(),
+                _ => BuildAvaloniaApp().StartWithClassicDesktopLifetime(args),
+            };
+        }
+        finally
+        {
+            // Let a newer launch that is waiting for its turn in right away.
+            if (OwnsInstance)
+                instance!.ReleaseMutex();
+        }
+    }
+
+    /// <summary>
+    /// Another RadioBridge runs. An older one makes way (a current one is asked to quit, one of 0.1.4 or older
+    /// is stopped) and this launch takes over; otherwise the running one shows its window and this launch ends.
+    /// </summary>
+    /// <returns>Null when this launch now owns <paramref name="instance"/> and should run; otherwise its exit code.</returns>
+    private static int? TakeOver(Mutex instance, Mode mode)
+    {
+        bool show = mode == Mode.Window;
+        var reply = SingleInstance.AskRunning(AppVersion, show);
+
+        string? older = null;
+        if (reply.Answer == LaunchAnswer.Quitting)
+            older = reply.Running?.ToString() ?? "older";
+        else if (reply.Answer == LaunchAnswer.Legacy && SingleInstance.StopOlderLegacy(AppVersion) is { Count: > 0 } stopped)
+            older = string.Join(", ", stopped);
+
+        if (older is not null)
+        {
+            if (WaitForTurn(instance))
+            {
+                Replaced = older;
+                return null;
+            }
+            Console.Error.WriteLine($"RadioBridge {older} is running and didn't make way for this newer one.");
+            return 1;
+        }
+
+        bool shown = show && (reply.Answer == LaunchAnswer.Staying
+                              || (reply.Answer == LaunchAnswer.Legacy && SingleInstance.AskLegacyToShow()));
+        if (shown)
+        {
+            Console.WriteLine("RadioBridge is already running; its window was brought to the front.");
+            return 0;
+        }
+        Console.Error.WriteLine("RadioBridge is already running.");
+        return 1;
+    }
+
+    /// <summary>Waits until the RadioBridge that is making way has gone.</summary>
+    private static bool WaitForTurn(Mutex instance)
+    {
+        try
+        {
+            return instance.WaitOne(TimeSpan.FromSeconds(15));
+        }
+        catch (AbandonedMutexException)
+        {
+            return true; // it was stopped without letting go: the mutex is ours now
+        }
     }
 
     private static void PrintDocuments(DocumentKind[] documents)
@@ -114,6 +179,10 @@ internal static partial class Program
         var recorder = new Recorder();
         using var loggers = CreateLoggers(Options.LogDirectory, console: true, recorder);
         using var stop = new ManualResetEventSlim();
+        var log = loggers.CreateLogger("RadioBridge.Headless");
+        if (Replaced is { } replaced)
+            log.LogInformation("Took over from RadioBridge {Older}, which made way for this newer version.", replaced);
+        using var listening = new CancellationTokenSource();
         using (var host = new BridgeHost(Options, loggers, stop.Set, recorder))
         {
             Console.CancelKeyPress += (_, e) =>
@@ -121,8 +190,17 @@ internal static partial class Program
                 e.Cancel = true;
                 stop.Set();
             };
+            if (OwnsInstance)
+            {
+                SingleInstance.Listen(AppVersion, show: () => { }, quitForNewer: newer =>
+                {
+                    log.LogInformation("Quitting: RadioBridge {Newer} is starting.", newer);
+                    stop.Set();
+                }, listening.Token);
+            }
             host.Start();
             stop.Wait();
+            listening.Cancel();
         }
         return 0;
     }

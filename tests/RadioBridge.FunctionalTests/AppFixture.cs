@@ -131,6 +131,20 @@ public sealed class AppFixture : IAsyncLifetime
         return start;
     }
 
+    /// <summary>Starts another copy of the app with extra environment variables; its output collects in <paramref name="output"/>.</summary>
+    public Process StartAnother(IReadOnlyDictionary<string, string> environment, System.Text.StringBuilder output, params string[] arguments)
+    {
+        var start = CreateStartInfo(arguments);
+        foreach (var (name, value) in environment)
+            start.Environment[name] = value;
+        var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start the app.");
+        process.OutputDataReceived += (_, e) => { lock (output) output.AppendLine(e.Data); };
+        process.ErrorDataReceived += (_, e) => { lock (output) output.AppendLine(e.Data); };
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+        return process;
+    }
+
     /// <summary>Runs the app with these arguments until it exits, e.g. for a command line option that just prints something.</summary>
     public async Task<(int ExitCode, string Output)> RunToExitAsync(params string[] arguments)
     {
