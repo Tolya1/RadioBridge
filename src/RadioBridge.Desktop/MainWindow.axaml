@@ -184,7 +184,7 @@
 
                 <TabItem Header="GPS">
                     <StackPanel Classes="tab">
-                        <TextBlock Classes="h2 first" Text="GNS 430/530 (X-Plane 12)" />
+                        <TextBlock Classes="h2 first" Text="GNS 430/530 (X-Plane 12 and MSFS 2024)" />
                         <CheckBox IsChecked="{Binding GpsControl}" Content="Use ADF and DME to control the GNS 430/530 instead of the ADF and DME radios" />
                         <StackPanel Orientation="Horizontal" Spacing="16" IsEnabled="{Binding GpsControl}">
                             <TextBlock Text="Lower row controls" VerticalAlignment="Center" />
@@ -192,7 +192,7 @@
                             <RadioButton GroupName="LowerGps" IsChecked="{Binding LowerRowGps1}" Content="GPS 1 (aircraft with one GNS)" />
                         </StackPanel>
                         <TextBlock Classes="caption" TextWrapping="Wrap"
-                                   Text="The upper row controls GPS 1. ADF types: big knob = next field or letter, small knob = the letter, press ACT/STBY = ENT, hold = CRSR. DME has the other keys: the small knob chooses one (0 D→, 1 MENU, 2 FPL, 3 PROC, 4 CDI, 5 OBS, 6 MSG, 7 VNAV, -1 CLR held), a press sends it, a hold is CLR, the big knob sets the map range. In MSFS, ADF and DME stay radios for now." />
+                                   Text="The upper row controls GPS 1. ADF types: big knob = next field or letter, small knob = the letter, press ACT/STBY = ENT, hold = CRSR. DME has the other keys: the small knob chooses one (0 D→, 1 MENU, 2 FPL, 3 PROC, 4 CDI, 5 OBS, 6 MSG, 7 VNAV, -1 CLR held), a press sends it, a hold is CLR, the big knob sets the map range. In MSFS this works in aircraft with the stock GNS 430/530; in others ADF and DME stay radios." />
                     </StackPanel>
                 </TabItem>
 

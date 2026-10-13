@@ -11,7 +11,7 @@ general-purpose panel software, made for one panel and done properly:
   is running. X-Plane needs no plugin, because RadioBridge uses X-Plane's built-in Web API.
 - **A panel that never fights you.** Fast spins accelerate, no detent is lost while the sim catches
   up, and the displays always settle on what the simulator really has.
-- **The GPS from the panel (X-Plane, optional).** ADF and DME can drive the GNS 430/530: type a
+- **The GPS from the panel (optional).** ADF and DME can drive the GNS 430/530 in X-Plane and MSFS: type a
   waypoint with the knobs and press the GNS keys with ACT/STBY.
 - **Plays well with other panel software.** It runs alongside SPAD.neXt or HangarControl when they
   drive your other panels.
@@ -167,8 +167,9 @@ Some details:
 
 ## Controlling the GPS
 
-In X-Plane, the ADF and DME positions can drive the built-in **GNS 430/530** instead of the ADF and
-DME radios. Turn it on in **Settings › GPS** (off by default). The upper row controls GPS 1. The lower
+The ADF and DME positions can drive the **GNS 430/530** instead of the ADF and DME radios: X-Plane's
+built-in one, and in MSFS 2024 the Working Title GNS of aircraft that use the stock GNS (see below).
+Turn it on in **Settings › GPS** (off by default). The upper row controls GPS 1. The lower
 row controls GPS 2, or GPS 1 as well for aircraft with one GNS (**Lower row controls**). On each row,
 ADF types and DME has the other keys:
 
@@ -195,8 +196,13 @@ With one row, flip the selector between ADF and DME as you go; that sends nothin
 
 - Without an active waypoint, or with the GPS off, distance and track show `----`.
 - Every knob click reaches the GNS as a click of its own, in order, so a fast spin loses nothing.
-- **X-Plane only for now.** MSFS's GNS doesn't take its keys from SimConnect directly, so in MSFS
-  ADF and DME stay radios. Add-on GPS units with their own commands (RealityXP, TDS GTNxi) aren't covered.
+- **In MSFS** the GNS keys are its H: events, which SimConnect can't send. RadioBridge presses them
+  through the aircraft's **input events** instead (`AS530_ENT`, `AS430_GPS_INNER`, …), which aircraft
+  built on Asobo's stock GNS have. It looks for them when it connects and every 10 seconds, so another
+  aircraft is noticed by itself; the log says which units it found. In an aircraft without them, ADF and
+  DME stay radios. Distance and track come from the GPS that drives navigation, so in MSFS they show on
+  GPS 1's row only. This needs MSFS 2024, or MSFS 2020 from Sim Update 13.
+- Add-on GPS units with their own commands or events (RealityXP, TDS GTNxi, PMS50) aren't covered.
 
 ## Try it without a simulator
 

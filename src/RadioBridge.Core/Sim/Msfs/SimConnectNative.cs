@@ -16,6 +16,7 @@ internal static partial class SimConnectNative
     public const uint RecvOpen = 2;
     public const uint RecvQuit = 3;
     public const uint RecvSimObjectData = 8;
+    public const uint RecvEnumerateInputEvents = 34;
 
     public const uint ObjectIdUser = 0;
     public const uint Unused = 0xFFFFFFFF;
@@ -68,6 +69,23 @@ internal static partial class SimConnectNative
         }
     }
 
+    /// <summary>
+    /// Whether the loaded library has the input events API (MSFS 2020 SU13 and MSFS 2024). Older libraries lack
+    /// it, and calling a missing function would end MSFS support, so check first.
+    /// </summary>
+    public static bool HasInputEvents
+    {
+        get
+        {
+            lock (Gate)
+            {
+                return _library != IntPtr.Zero
+                       && NativeLibrary.TryGetExport(_library, "SimConnect_EnumerateInputEvents", out _)
+                       && NativeLibrary.TryGetExport(_library, "SimConnect_SetInputEvent", out _);
+            }
+        }
+    }
+
     private static IntPtr Resolve(string name, Assembly assembly, DllImportSearchPath? searchPath)
     {
         if (!name.Equals(Dll, StringComparison.OrdinalIgnoreCase))
@@ -96,4 +114,13 @@ internal static partial class SimConnectNative
 
     [LibraryImport(Dll, EntryPoint = "SimConnect_TransmitClientEvent")]
     public static partial int TransmitClientEvent(IntPtr handle, uint objectId, uint eventId, uint data, uint groupId, uint flags);
+
+    /// <summary>Answered with RecvEnumerateInputEvents pages (see <see cref="GnsInputEvents.ReadPage"/>).</summary>
+    [LibraryImport(Dll, EntryPoint = "SimConnect_EnumerateInputEvents")]
+    public static partial int EnumerateInputEvents(IntPtr handle, uint requestId);
+
+    /// <param name="hash">The input event's hash: 64 bits, whatever the documentation says.</param>
+    /// <param name="size">Bytes of <paramref name="values"/>: 8 per FLOAT64 parameter.</param>
+    [LibraryImport(Dll, EntryPoint = "SimConnect_SetInputEvent")]
+    public static partial int SetInputEvent(IntPtr handle, ulong hash, uint size, double[] values);
 }

@@ -80,8 +80,8 @@ show the old pair, then the same frequency twice, then the new pair.
 ### GPS control
 
 With `GpsControl` on, a row whose selector is on ADF or DME drives a GNS 430/530 instead of the radios,
-as long as the connected simulator takes GPS keys (`ISimBackend.SupportsGpsKeys`, so far only X-Plane;
-otherwise ADF and DME stay radios). The upper row drives GPS 1, the lower row `LowerRowGps` (2, or 1 for
+as long as the connected simulator takes GPS keys (`ISimBackend.SupportsGpsKeys`: X-Plane always, MSFS
+when the loaded aircraft has the stock GNS's input events; otherwise ADF and DME stay radios). The upper row drives GPS 1, the lower row `LowerRowGps` (2, or 1 for
 aircraft with one GNS). The controller turns input into `PressGpsKey(unit, GpsKey)` commands:
 
 - **ADF** is the GNS's right-hand corner: outer knob = large knob, inner knob = small knob, a press = ENT,
@@ -218,6 +218,25 @@ the *changed only* flag.
 
 COM values are normalized to channel names whether MSFS reports the channel name (118.010) or the
 real 8.33 kHz frequency behind it (118.00833).
+
+**GNS keys are input events.** The Working Title GNS 430/530 reacts to H: events (`AS530_ENT_Push`, …),
+and SimConnect has no way to send those: every tool that does goes through a WASM module in the sim.
+But aircraft built on Asobo's stock GNS behaviour (`ModelBehaviorDefs\Asobo\GPS\AS430.xml`) expose an
+input event per key and knob, `<unit>_<control>` (`AS530_ENT`, `AS430_GPS_INNER`, `AS530_RANGE_ZOOM`),
+whose code fires the H: event. `GnsInputEvents` maps the panel's keys onto them:
+
+- A button fires on 1. A knob turns one detent clockwise for a value above 0, otherwise anticlockwise;
+  the range goes up above 0. CLR takes two values (press, duration): (1, 0) then (0, 0) is a short press,
+  (1, 2) its own "held" binding. CDI fires `TOGGLE_GPS_DRIVES_NAV1` rather than an H: event.
+- Units: the 530 is GPS 1 and the 430 GPS 2; aircraft that number them (`AS530_1`, `AS530_2`) go by number.
+- Input events and their 64-bit hashes are per aircraft, so the backend lists them (`EnumerateInputEvents`)
+  a second after connecting and every 10 s, and replaces the map; a listing that never completes means
+  the aircraft has none (MSFS answers with an exception). The page stride is taken from the packet size,
+  as the 2024 docs and headers disagree about the descriptor. Libraries without the API (MSFS 2020
+  before SU13) are detected with `NativeLibrary.TryGetExport`, so calling it can't end MSFS support.
+- Distance and desired track come from `GPS WP DISTANCE`, `GPS WP DESIRED TRACK` and `GPS IS ACTIVE WAY
+  POINT`, in a data request of their own so a value MSFS doesn't know can't shift the radio values.
+  They belong to the GPS that drives navigation, so they are shown as GPS 1's.
 
 ## The built-in documents
 

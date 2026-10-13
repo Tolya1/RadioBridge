@@ -28,7 +28,7 @@ public sealed record BridgeSettings
     public int VfrSquawk { get; init; } = 7000;
 
     /// <summary>
-    /// ADF and DME drive the GNS 430/530 instead of the radios (X-Plane only for now): ADF types (knobs, ENT,
+    /// ADF and DME drive the GNS 430/530 instead of the radios (X-Plane, and MSFS aircraft with the stock GNS): ADF types (knobs, ENT,
     /// CRSR), DME has the other keys. Off by default.
     /// </summary>
     public bool GpsControl { get; init; }

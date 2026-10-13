@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -38,6 +39,23 @@ public sealed class MsfsBackend : ISimBackend
         ("KOHLSMAN SETTING MB:1", "Millibars"),
     ];
 
+    // The GPS that drives navigation; MSFS has no such values per GNS unit, so they are shown as GPS 1's.
+    // A request of their own, so a GPS value MSFS might not know can't shift the radio values.
+    private static readonly (string Name, string Unit)[] GpsVariables =
+    [
+        ("GPS WP DISTANCE", "Nautical miles"),
+        ("GPS WP DESIRED TRACK", "Degrees"),
+        ("GPS IS ACTIVE WAY POINT", "Bool"),
+    ];
+
+    private const uint DefineGps = 1;
+    private const uint RequestGps = 1;
+
+    /// <summary>How often the aircraft's input events are listed again, which also notices another aircraft.</summary>
+    private static readonly TimeSpan InputEventsInterval = TimeSpan.FromSeconds(10);
+
+    private const uint RequestInputEvents = 100; // + a running number
+
     private enum Ev : uint
     {
         Com1Standby, Com2Standby, Nav1Standby, Nav2Standby,
@@ -71,6 +89,8 @@ public sealed class MsfsBackend : ISimBackend
     private readonly Func<string?> _configuredPath;
     private readonly ILocatorEnvironment _environment;
     private readonly ConcurrentQueue<(Ev Event, uint Data)> _outbox = new();
+    private readonly ConcurrentQueue<InputEventSet> _inputs = new();
+    private volatile GnsInputEvents _gns = GnsInputEvents.None;
     private readonly CancellationTokenSource _cts = new();
     private readonly HashSet<string> _loggedProblems = new(StringComparer.OrdinalIgnoreCase);
     private Thread? _thread;
@@ -94,6 +114,9 @@ public sealed class MsfsBackend : ISimBackend
     public RadioState State => _state;
 
     public SimNotice? Notice => Volatile.Read(ref _notice);
+
+    /// <summary>When the loaded aircraft has the stock GNS 430/530, whose keys are input events (<see cref="GnsInputEvents"/>).</summary>
+    public bool SupportsGpsKeys => _connected && _gns.Units.Count > 0;
 
     public event Action? Changed;
 
@@ -176,6 +199,13 @@ public sealed class MsfsBackend : ISimBackend
         if (!_connected)
             return;
 
+        if (command is PressGpsKey gps)
+        {
+            foreach (var set in _gns.Sets(gps.Unit, gps.Key))
+                _inputs.Enqueue(set);
+            return;
+        }
+
         (Ev, uint)? message = command switch
         {
             SetStandby c => (c.Radio switch
@@ -254,20 +284,34 @@ public sealed class MsfsBackend : ISimBackend
     {
         foreach (var (name, unit) in Variables)
             AddToDataDefinition(handle, DefineRadios, name, unit, DataTypeFloat64, 0f, Unused);
+        foreach (var (name, unit) in GpsVariables)
+            AddToDataDefinition(handle, DefineGps, name, unit, DataTypeFloat64, 0f, Unused);
 
         foreach (var (ev, name) in EventNames)
             MapClientEventToSimEvent(handle, (uint)ev, name);
 
         RequestDataOnSimObject(handle, RequestRadios, DefineRadios, ObjectIdUser, PeriodSimFrame, DataRequestFlagChanged, 0, 0, 0);
+        RequestDataOnSimObject(handle, RequestGps, DefineGps, ObjectIdUser, PeriodSimFrame, DataRequestFlagChanged, 0, 0, 0);
     }
 
     private void Pump(IntPtr handle, CancellationToken ct)
     {
         var values = new double[Variables.Length];
+        var gpsValues = new double[GpsVariables.Length];
+        var gps = GpsNav.None;
         bool open = true;
+
+        // The aircraft's input events are listed now and then (the GNS keys are among them). A listing that
+        // never completes means the aircraft has none: MSFS answers that with an exception instead.
+        bool canListInputEvents = HasInputEvents;
+        uint listing = 0;
+        bool listed = true;
+        var listedEvents = new List<(string Name, ulong Hash)>();
+        long nextListing = long.MaxValue;
+
         while (open && !ct.IsCancellationRequested)
         {
-            while (GetNextDispatch(handle, out IntPtr data, out _) == 0 && data != IntPtr.Zero)
+            while (GetNextDispatch(handle, out IntPtr data, out uint size) == 0 && data != IntPtr.Zero)
             {
                 switch ((uint)Marshal.ReadInt32(data, RecvIdOffset))
                 {
@@ -275,7 +319,23 @@ public sealed class MsfsBackend : ISimBackend
                         _connected = true;
                         _log.LogInformation("Connected to MSFS.");
                         _recorder.Record("msfs", "connected", w => w.WriteString("library", LoadedPath));
+                        if (canListInputEvents)
+                            nextListing = Stopwatch.GetTimestamp() + Stopwatch.Frequency; // in a second
+                        else
+                            _log.LogInformation("{Path} has no input events (MSFS 2020 before SU13): GPS keys can't be pressed.", LoadedPath);
                         Changed?.Invoke();
+                        break;
+
+                    case RecvEnumerateInputEvents:
+                        var (request, page, pages, events) = GnsInputEvents.ReadPage(data, size);
+                        if (request != RequestInputEvents + listing || listed)
+                            break;
+                        listedEvents.AddRange(events);
+                        if (page + 1 >= pages)
+                        {
+                            listed = true;
+                            UseGns(new GnsInputEvents(listedEvents), listedEvents.Count);
+                        }
                         break;
 
                     case RecvQuit:
@@ -292,8 +352,16 @@ public sealed class MsfsBackend : ISimBackend
 
                     case RecvSimObjectData when (uint)Marshal.ReadInt32(data, SimObjectRequestIdOffset) == RequestRadios:
                         Marshal.Copy(IntPtr.Add(data, SimObjectDataOffset), values, 0, values.Length);
-                        _state = ToState(values);
-                        RecordValues(values);
+                        _state = ToState(values) with { Gps1 = gps };
+                        RecordValues(Variables, values);
+                        Changed?.Invoke();
+                        break;
+
+                    case RecvSimObjectData when (uint)Marshal.ReadInt32(data, SimObjectRequestIdOffset) == RequestGps:
+                        Marshal.Copy(IntPtr.Add(data, SimObjectDataOffset), gpsValues, 0, gpsValues.Length);
+                        gps = ToGps(gpsValues);
+                        _state = _state with { Gps1 = gps };
+                        RecordValues(GpsVariables, gpsValues);
                         Changed?.Invoke();
                         break;
                 }
@@ -313,18 +381,65 @@ public sealed class MsfsBackend : ISimBackend
                 });
             }
 
+            while (_inputs.TryDequeue(out var set))
+            {
+                _log.LogDebug("MSFS <- input event {Name} {Values}", set.Name, string.Join(" ", set.Values));
+                SetInputEvent(handle, set.Hash, (uint)(set.Values.Length * sizeof(double)), set.Values);
+                _recorder.Record("msfs", "input", w =>
+                {
+                    w.WriteString("name", set.Name);
+                    w.WriteStartArray("values");
+                    foreach (double value in set.Values)
+                        w.WriteNumberValue(value);
+                    w.WriteEndArray();
+                });
+            }
+
+            if (Stopwatch.GetTimestamp() >= nextListing)
+            {
+                if (!listed)
+                    UseGns(GnsInputEvents.None, 0); // the last listing never came: this aircraft has no input events
+                listing++;
+                listed = false;
+                listedEvents.Clear();
+                EnumerateInputEvents(handle, RequestInputEvents + listing);
+                nextListing = Stopwatch.GetTimestamp() + (long)(InputEventsInterval.TotalSeconds * Stopwatch.Frequency);
+            }
+
             ct.WaitHandle.WaitOne(15);
         }
     }
 
+    /// <summary>Takes a new listing of the aircraft's GNS keys; says so when the units found change (another aircraft).</summary>
+    private void UseGns(GnsInputEvents gns, int inputEvents)
+    {
+        var before = _gns;
+        _gns = gns; // fresh hashes even for the same aircraft
+        if (before.Units.SequenceEqual(gns.Units, StringComparer.OrdinalIgnoreCase))
+            return;
+        if (gns.Units.Count > 0)
+            _log.LogInformation("This aircraft's GNS keys can be pressed: {Units} (of {Count} input events).", string.Join(", ", gns.Units), inputEvents);
+        else
+            _log.LogInformation("This aircraft has no stock GNS 430/530 input events: ADF and DME stay radios.");
+        _recorder.Record("msfs", "gns", w =>
+        {
+            w.WriteNumber("inputEvents", inputEvents);
+            w.WriteStartArray("units");
+            foreach (var unit in gns.Units)
+                w.WriteStringValue(unit);
+            w.WriteEndArray();
+        });
+        Changed?.Invoke();
+    }
+
     /// <summary>Records the SimVars as MSFS sent them, by name, before any conversion.</summary>
-    private void RecordValues(double[] values)
+    private void RecordValues((string Name, string Unit)[] variables, double[] values)
     {
         _recorder.Record("msfs", "values", w =>
         {
             w.WriteStartObject("values");
-            for (int i = 0; i < Variables.Length; i++)
-                w.WriteNumberOrNull(Variables[i].Name, values[i]);
+            for (int i = 0; i < variables.Length; i++)
+                w.WriteNumberOrNull(variables[i].Name, values[i]);
             w.WriteEndObject();
         });
     }
@@ -343,6 +458,8 @@ public sealed class MsfsBackend : ISimBackend
         BaroHpa = v[15],
     };
 
+    internal static GpsNav ToGps(double[] v) => new(v[0], v[1], v[2] != 0);
+
     /// <summary>Packed BCD, one decimal digit per nibble: 362000 -> 0x00362000.</summary>
     internal static uint ToBcd(uint value)
     {
@@ -355,6 +472,8 @@ public sealed class MsfsBackend : ISimBackend
     private void SetDisconnected()
     {
         while (_outbox.TryDequeue(out _)) { }
+        while (_inputs.TryDequeue(out _)) { }
+        _gns = GnsInputEvents.None;
         _state = RadioState.Empty;
         if (!_connected)
             return;
