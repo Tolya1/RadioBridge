@@ -49,7 +49,7 @@ zip holds just `RadioBridge.exe`. Specifically:
 ## Testing the package itself
 
 The functional tests normally launch the build output. Point them at the packaged file instead and
-the same 19 scenarios run against exactly what users get:
+the same scenarios run against exactly what users get:
 
 ```bash
 mise run functional:package                     # publishes for this machine, then runs them
