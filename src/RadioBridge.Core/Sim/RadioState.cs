@@ -117,3 +117,24 @@ public sealed record SetBaroStandard : SimCommand;
 
 /// <param name="Unit">The GPS: 1 or 2.</param>
 public sealed record PressGpsKey(int Unit, GpsKey Key) : SimCommand;
+
+/// <summary>A value the panel's knobs change.</summary>
+public enum KnobTarget
+{
+    Com1,
+    Com2,
+    Nav1,
+    Nav2,
+    Adf1,
+    Adf2,
+    Squawk,
+    Baro,
+}
+
+/// <summary>
+/// A knob turn, for aircraft whose radios can only be turned, not set (<see cref="ISimBackend.TurnsKnobs"/>), sent
+/// instead of the matching Set command: which knob and how many detents (acceleration included, negative =
+/// anticlockwise), and the value it goes from and should lead to, in <see cref="RadioState"/> units. A hold that
+/// sets a value (VFR squawk) comes as a turn of 0 steps from the current value to that one.
+/// </summary>
+public sealed record TurnKnobs(KnobTarget Target, bool Outer, int Steps, double From, double To) : SimCommand;

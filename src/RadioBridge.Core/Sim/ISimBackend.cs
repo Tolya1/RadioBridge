@@ -27,6 +27,12 @@ public interface ISimBackend : IDisposable
     /// </summary>
     bool SupportsGpsKeys => false;
 
+    /// <summary>
+    /// Whether the loaded aircraft's radios can only be turned, not set (the PMDG 737): then the panel sends
+    /// <see cref="TurnKnobs"/> instead of SetStandby, SetAdf, SetSquawk and SetBaro.
+    /// </summary>
+    bool TurnsKnobs => false;
+
     /// <summary>Raised from a background thread when the connection, <see cref="State"/> or <see cref="Notice"/> changes.</summary>
     event Action? Changed;
 

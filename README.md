@@ -159,6 +159,12 @@ Some details:
   a second while the simulator catches up. After that the simulator's value always wins. So if a radio
   can't tune 8.33 kHz and snaps back, the panel shows that. **Hold ACT/STBY** to switch the inner knob
   to 25 kHz steps for that aircraft.
+- **PMDG 737 (MSFS).** Its radios ignore MSFS's usual radio events, so while a PMDG 737 is loaded
+  RadioBridge works its cockpit controls through PMDG's own events, as a mouse would: the COM1/2 and
+  NAV1/2 knobs and transfer switches, each transponder digit knob, and the captain's altimeter knob and
+  STD button (STD is pressed only when the altimeter isn't on standard already). The panel shows what
+  MSFS reports, as for any aircraft. The 737's ADF isn't covered (its three knobs and standby don't match
+  the panel's ADF). Nothing needs enabling in the 737 for this.
 - ACT/STBY reaches the simulator as a short press, like a click on the cockpit button. Some add-on
   radios only swap when the button is released (REP's Bendix King radios in the SF-260, for one), and
   this works for them too.

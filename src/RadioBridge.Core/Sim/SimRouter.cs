@@ -39,6 +39,7 @@ public sealed class SimRouter : ISimBackend
     public bool IsConnected => Active is not null;
     public RadioState State => Active?.State ?? RadioState.Empty;
     public bool SupportsGpsKeys => Active?.SupportsGpsKeys == true;
+    public bool TurnsKnobs => Active?.TurnsKnobs == true;
 
     /// <summary>
     /// While a real simulator is connected, its own problem if it has one (X-Plane answering late). Otherwise

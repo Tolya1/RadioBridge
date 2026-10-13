@@ -244,7 +244,7 @@ public sealed class PanelController : IDisposable
                     _ => Frequencies.StepNavChannel(khz, steps),
                 };
                 SetPending(FieldOf(radio), next);
-                _sim.Send(new SetStandby(radio, next));
+                SendValue(new SetStandby(radio, next), (KnobTarget)(int)radio, outer, steps, khz, next);
                 _log.LogDebug("{Radio} standby {From} -> {To} ({Steps})", radio, khz, next, steps);
                 RecordTune(turn.Row, khz, next, steps, multiplier);
                 break;
@@ -256,7 +256,7 @@ public sealed class PanelController : IDisposable
                     return;
                 int nextAdf = Math.Clamp(adf + steps * (outer ? 10 : 1), AdfMinKhz, AdfMaxKhz);
                 SetPending(index == 1 ? Field.Adf1 : Field.Adf2, nextAdf);
-                _sim.Send(new SetAdf(index, nextAdf));
+                SendValue(new SetAdf(index, nextAdf), index == 1 ? KnobTarget.Adf1 : KnobTarget.Adf2, outer, steps, adf, nextAdf);
                 RecordTune(turn.Row, adf, nextAdf, steps, 1);
                 break;
 
@@ -268,7 +268,7 @@ public sealed class PanelController : IDisposable
                     : Math.Round(state.BaroHpa) + steps * (outer ? 10 : 1);
                 hpa = Math.Clamp(hpa, BaroMinHpa, BaroMaxHpa);
                 SetPending(Field.Baro, hpa);
-                _sim.Send(new SetBaro(hpa));
+                SendValue(new SetBaro(hpa), KnobTarget.Baro, outer, steps, state.BaroHpa, hpa);
                 RecordTune(turn.Row, state.BaroHpa, hpa, steps, 1, settings.BaroUnit.ToString());
                 break;
 
@@ -277,11 +277,18 @@ public sealed class PanelController : IDisposable
                     return;
                 int code = outer ? Squawk.StepHighPair(state.Squawk, steps) : Squawk.StepLowPair(state.Squawk, steps);
                 SetPending(Field.Squawk, code);
-                _sim.Send(new SetSquawk(code));
+                SendValue(new SetSquawk(code), KnobTarget.Squawk, outer, steps, state.Squawk, code);
                 RecordTune(turn.Row, state.Squawk, code, steps, 1);
                 break;
         }
     }
+
+    /// <summary>
+    /// Sends a value the knobs changed: <paramref name="set"/>, or for an aircraft whose radios can only be turned
+    /// (<see cref="ISimBackend.TurnsKnobs"/>) the knob turn that leads from <paramref name="from"/> to <paramref name="to"/>.
+    /// </summary>
+    private void SendValue(SimCommand set, KnobTarget target, bool outer, int steps, double from, double to) =>
+        _sim.Send(_sim.TurnsKnobs ? new TurnKnobs(target, outer, steps, from, to) : set);
 
     private void RecordTune(PanelRow row, double from, double to, int steps, int multiplier, string? unit = null) =>
         RecordAction("tune", row, w =>
@@ -435,7 +442,7 @@ public sealed class PanelController : IDisposable
             case Selector.Xpdr when _sim.IsConnected:
                 int vfr = _settings.Current.VfrSquawk;
                 SetPending(Field.Squawk, vfr);
-                _sim.Send(new SetSquawk(vfr));
+                SendValue(new SetSquawk(vfr), KnobTarget.Squawk, false, 0, Effective(_sim.State, _time.GetTimestamp()).Squawk, vfr);
                 _log.LogDebug("Squawk VFR {Code:0000}", vfr);
                 RecordAction("hold", row, w => w.WriteString("action", $"VFR squawk {vfr:0000}"));
                 break;

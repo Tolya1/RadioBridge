@@ -26,6 +26,7 @@ internal sealed class FakeSim(string name = "FakeSim") : ISimBackend
     public List<SimCommand> Sent { get; } = [];
     public SimNotice? Notice { get; private set; }
     public bool SupportsGpsKeys { get; set; }
+    public bool TurnsKnobs { get; set; }
 
     public event Action? Changed;
 

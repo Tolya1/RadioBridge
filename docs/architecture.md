@@ -219,6 +219,18 @@ the *changed only* flag.
 COM values are normalized to channel names whether MSFS reports the channel name (118.010) or the
 real 8.33 kHz frequency behind it (118.00833).
 
+**The PMDG 737 turns knobs.** Its radios, transponder and altimeter ignore MSFS's events and react to
+PMDG's own (`PMDG_NG3_SDK.h` in the aircraft's package): client events mapped to `#<69632 + n>`, whose
+parameter is a mouse action (a wheel step turns a knob one detent, a click and a release press a switch).
+There is no "set frequency" event, so the backend reports `TurnsKnobs` while a 737 is loaded, and the
+controller then sends `TurnKnobs` (which knob, how many detents, from what value to what) instead of
+SetStandby/SetSquawk/SetBaro; `Pmdg737` turns that into events. The transponder has a knob per digit, so a
+squawk change becomes each digit knob turned the short way. STD is a toggle, so it is pressed only when the
+altimeter isn't at 1013.25 already. The 737 is known by the .cfg path of the loaded aircraft
+(`RequestSystemState("AircraftLoaded")`: `SimObjects\Airplanes\PMDG 737-800\…`), checked on connecting, when the
+title changes and every 10 s; titles alone ("737-800 PAX BW TC") don't say PMDG. Values are still read from the
+usual SimVars, which the 737 keeps current.
+
 **GNS keys are input events.** The Working Title GNS 430/530 reacts to H: events (`AS530_ENT_Push`, …),
 and SimConnect has no way to send those: every tool that does goes through a WASM module in the sim.
 But aircraft built on Asobo's stock GNS behaviour (`ModelBehaviorDefs\Asobo\GPS\AS430.xml`) expose an

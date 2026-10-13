@@ -51,6 +51,19 @@ public sealed class MsfsBackend : ISimBackend
     private const uint DefineGps = 1;
     private const uint RequestGps = 1;
 
+    // The aircraft's title and .cfg path, to know a PMDG 737 (Pmdg737).
+    private const uint DefineTitle = 2;
+    private const uint RequestTitle = 2;
+    private const uint RequestAircraft = 3;
+    private const int TitleLength = 256;
+
+    /// <summary>A NUL-terminated string from SimConnect.</summary>
+    private static string CString(byte[] bytes) =>
+        System.Text.Encoding.UTF8.GetString(bytes, 0, Array.IndexOf(bytes, (byte)0) is var end and >= 0 ? end : bytes.Length);
+
+    /// <summary>Client event IDs for PMDG's events: this plus the event's number.</summary>
+    private const uint PmdgClientEvents = 1000;
+
     /// <summary>How often the aircraft's input events are listed again, which also notices another aircraft.</summary>
     private static readonly TimeSpan InputEventsInterval = TimeSpan.FromSeconds(10);
 
@@ -90,7 +103,9 @@ public sealed class MsfsBackend : ISimBackend
     private readonly ILocatorEnvironment _environment;
     private readonly ConcurrentQueue<(Ev Event, uint Data)> _outbox = new();
     private readonly ConcurrentQueue<InputEventSet> _inputs = new();
+    private readonly ConcurrentQueue<(uint Event, uint Parameter)> _pmdgOutbox = new();
     private volatile GnsInputEvents _gns = GnsInputEvents.None;
+    private volatile bool _pmdg737;
     private readonly CancellationTokenSource _cts = new();
     private readonly HashSet<string> _loggedProblems = new(StringComparer.OrdinalIgnoreCase);
     private Thread? _thread;
@@ -117,6 +132,9 @@ public sealed class MsfsBackend : ISimBackend
 
     /// <summary>When the loaded aircraft has the stock GNS 430/530, whose keys are input events (<see cref="GnsInputEvents"/>).</summary>
     public bool SupportsGpsKeys => _connected && _gns.Units.Count > 0;
+
+    /// <summary>A PMDG 737 is loaded: its radios only react to its own events, which turn knobs (<see cref="Pmdg737"/>).</summary>
+    public bool TurnsKnobs => _connected && _pmdg737;
 
     public event Action? Changed;
 
@@ -184,7 +202,10 @@ public sealed class MsfsBackend : ISimBackend
 
     private void LogOnce(string key, Action log)
     {
-        if (_loggedProblems.Add(key))
+        bool first;
+        lock (_loggedProblems)
+            first = _loggedProblems.Add(key);
+        if (first)
             log();
     }
 
@@ -205,6 +226,18 @@ public sealed class MsfsBackend : ISimBackend
                 _inputs.Enqueue(set);
             return;
         }
+
+        if (_pmdg737 && command is TurnKnobs or SwapRadio or SetBaroStandard)
+        {
+            var events = Pmdg737.Translate(command, _state);
+            if (events.Count == 0)
+                LogOnce($"pmdg:{command.GetType().Name}:{(command as TurnKnobs)?.Target}", () => _log.LogInformation("The PMDG 737 has nothing for {Command}.", command));
+            foreach (var e in events)
+                _pmdgOutbox.Enqueue(e);
+            return;
+        }
+        if (command is TurnKnobs)
+            return; // the 737 was left a moment ago: the next turn comes as a value again
 
         (Ev, uint)? message = command switch
         {
@@ -286,12 +319,16 @@ public sealed class MsfsBackend : ISimBackend
             AddToDataDefinition(handle, DefineRadios, name, unit, DataTypeFloat64, 0f, Unused);
         foreach (var (name, unit) in GpsVariables)
             AddToDataDefinition(handle, DefineGps, name, unit, DataTypeFloat64, 0f, Unused);
+        AddToDataDefinition(handle, DefineTitle, "TITLE", null, DataTypeString256, 0f, Unused);
 
         foreach (var (ev, name) in EventNames)
             MapClientEventToSimEvent(handle, (uint)ev, name);
+        foreach (uint pmdg in Pmdg737.Events)
+            MapClientEventToSimEvent(handle, PmdgClientEvents + pmdg, $"#{Pmdg737.EventBase + pmdg}");
 
         RequestDataOnSimObject(handle, RequestRadios, DefineRadios, ObjectIdUser, PeriodSimFrame, DataRequestFlagChanged, 0, 0, 0);
         RequestDataOnSimObject(handle, RequestGps, DefineGps, ObjectIdUser, PeriodSimFrame, DataRequestFlagChanged, 0, 0, 0);
+        RequestDataOnSimObject(handle, RequestTitle, DefineTitle, ObjectIdUser, PeriodSecond, DataRequestFlagChanged, 0, 0, 0);
     }
 
     private void Pump(IntPtr handle, CancellationToken ct)
@@ -308,6 +345,8 @@ public sealed class MsfsBackend : ISimBackend
         bool listed = true;
         var listedEvents = new List<(string Name, ulong Hash)>();
         long nextListing = long.MaxValue;
+        long nextAircraftCheck = 0; // the loaded aircraft's path: at once, then every 10 s
+        _aircraftTitle = _aircraftPath = null;
 
         while (open && !ct.IsCancellationRequested)
         {
@@ -357,6 +396,19 @@ public sealed class MsfsBackend : ISimBackend
                         Changed?.Invoke();
                         break;
 
+                    case RecvSimObjectData when (uint)Marshal.ReadInt32(data, SimObjectRequestIdOffset) == RequestTitle:
+                        var title = new byte[TitleLength];
+                        Marshal.Copy(IntPtr.Add(data, SimObjectDataOffset), title, 0, title.Length);
+                        UseAircraft(title: CString(title));
+                        nextAircraftCheck = Stopwatch.GetTimestamp(); // another aircraft: its path now
+                        break;
+
+                    case RecvSystemState when (uint)Marshal.ReadInt32(data, SystemStateRequestIdOffset) == RequestAircraft:
+                        var path = new byte[260];
+                        Marshal.Copy(IntPtr.Add(data, SystemStateStringOffset), path, 0, path.Length);
+                        UseAircraft(path: CString(path));
+                        break;
+
                     case RecvSimObjectData when (uint)Marshal.ReadInt32(data, SimObjectRequestIdOffset) == RequestGps:
                         Marshal.Copy(IntPtr.Add(data, SimObjectDataOffset), gpsValues, 0, gpsValues.Length);
                         gps = ToGps(gpsValues);
@@ -381,6 +433,17 @@ public sealed class MsfsBackend : ISimBackend
                 });
             }
 
+            while (_pmdgOutbox.TryDequeue(out var pmdg))
+            {
+                _log.LogDebug("MSFS <- PMDG event {Event} {Parameter:X}", pmdg.Event, pmdg.Parameter);
+                TransmitClientEvent(handle, ObjectIdUser, PmdgClientEvents + pmdg.Event, pmdg.Parameter, GroupPriorityHighest, EventFlagGroupIdIsPriority);
+                _recorder.Record("msfs", "pmdg", w =>
+                {
+                    w.WriteNumber("event", pmdg.Event);
+                    w.WriteString("parameter", $"0x{pmdg.Parameter:X}");
+                });
+            }
+
             while (_inputs.TryDequeue(out var set))
             {
                 _log.LogDebug("MSFS <- input event {Name} {Values}", set.Name, string.Join(" ", set.Values));
@@ -393,6 +456,12 @@ public sealed class MsfsBackend : ISimBackend
                         w.WriteNumberValue(value);
                     w.WriteEndArray();
                 });
+            }
+
+            if (_connected && Stopwatch.GetTimestamp() >= nextAircraftCheck)
+            {
+                RequestSystemState(handle, RequestAircraft, "AircraftLoaded");
+                nextAircraftCheck = Stopwatch.GetTimestamp() + (long)(InputEventsInterval.TotalSeconds * Stopwatch.Frequency);
             }
 
             if (Stopwatch.GetTimestamp() >= nextListing)
@@ -409,6 +478,35 @@ public sealed class MsfsBackend : ISimBackend
             ct.WaitHandle.WaitOne(15);
         }
     }
+
+    /// <summary>
+    /// The loaded aircraft's title or .cfg path came (on connecting, when another aircraft is loaded, and every
+    /// 10 s for the path). Logged when either changes.
+    /// </summary>
+    private void UseAircraft(string? title = null, string? path = null)
+    {
+        if ((title is null || title == _aircraftTitle) && (path is null || path == _aircraftPath))
+            return;
+        _aircraftTitle = title ?? _aircraftTitle;
+        _aircraftPath = path ?? _aircraftPath;
+        bool pmdg = Pmdg737.IsPmdg737(_aircraftPath) || Pmdg737.IsPmdg737(_aircraftTitle);
+        _log.LogInformation("Aircraft: {Title} ({Path}){Pmdg}.", _aircraftTitle, _aircraftPath,
+            pmdg ? ", a PMDG 737: its radios are worked through PMDG's own events" : "");
+        _recorder.Record("msfs", "aircraft", w =>
+        {
+            w.WriteString("title", _aircraftTitle);
+            w.WriteString("path", _aircraftPath);
+            w.WriteBoolean("pmdg737", pmdg);
+        });
+        if (pmdg == _pmdg737)
+            return;
+        _pmdg737 = pmdg;
+        Changed?.Invoke();
+    }
+
+    // The SimConnect thread's view of the loaded aircraft.
+    private string? _aircraftTitle;
+    private string? _aircraftPath;
 
     /// <summary>Takes a new listing of the aircraft's GNS keys; says so when the units found change (another aircraft).</summary>
     private void UseGns(GnsInputEvents gns, int inputEvents)
@@ -473,7 +571,9 @@ public sealed class MsfsBackend : ISimBackend
     {
         while (_outbox.TryDequeue(out _)) { }
         while (_inputs.TryDequeue(out _)) { }
+        while (_pmdgOutbox.TryDequeue(out _)) { }
         _gns = GnsInputEvents.None;
+        _pmdg737 = false;
         _state = RadioState.Empty;
         if (!_connected)
             return;

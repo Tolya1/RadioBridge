@@ -16,12 +16,17 @@ internal static partial class SimConnectNative
     public const uint RecvOpen = 2;
     public const uint RecvQuit = 3;
     public const uint RecvSimObjectData = 8;
+    public const uint RecvSystemState = 15;
+    public const int SystemStateRequestIdOffset = 12; // SIMCONNECT_RECV_SYSTEM_STATE.dwRequestID
+    public const int SystemStateStringOffset = 24;    // SIMCONNECT_RECV_SYSTEM_STATE.szString[260]
     public const uint RecvEnumerateInputEvents = 34;
 
     public const uint ObjectIdUser = 0;
     public const uint Unused = 0xFFFFFFFF;
     public const uint DataTypeFloat64 = 4;
+    public const uint DataTypeString256 = 9;
     public const uint PeriodSimFrame = 3;
+    public const uint PeriodSecond = 4;
     public const uint DataRequestFlagChanged = 1;
     public const uint GroupPriorityHighest = 1;
     public const uint EventFlagGroupIdIsPriority = 0x10;
@@ -104,7 +109,7 @@ internal static partial class SimConnectNative
     public static partial int GetNextDispatch(IntPtr handle, out IntPtr data, out uint size);
 
     [LibraryImport(Dll, EntryPoint = "SimConnect_AddToDataDefinition", StringMarshalling = StringMarshalling.Utf8)]
-    public static partial int AddToDataDefinition(IntPtr handle, uint defineId, string datumName, string unitsName, uint datumType, float epsilon, uint datumId);
+    public static partial int AddToDataDefinition(IntPtr handle, uint defineId, string datumName, string? unitsName, uint datumType, float epsilon, uint datumId);
 
     [LibraryImport(Dll, EntryPoint = "SimConnect_RequestDataOnSimObject")]
     public static partial int RequestDataOnSimObject(IntPtr handle, uint requestId, uint defineId, uint objectId, uint period, uint flags, uint origin, uint interval, uint limit);
@@ -114,6 +119,10 @@ internal static partial class SimConnectNative
 
     [LibraryImport(Dll, EntryPoint = "SimConnect_TransmitClientEvent")]
     public static partial int TransmitClientEvent(IntPtr handle, uint objectId, uint eventId, uint data, uint groupId, uint flags);
+
+    /// <summary>Answered with RecvSystemState; "AircraftLoaded" gives the loaded aircraft's .cfg path.</summary>
+    [LibraryImport(Dll, EntryPoint = "SimConnect_RequestSystemState", StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int RequestSystemState(IntPtr handle, uint requestId, string state);
 
     /// <summary>Answered with RecvEnumerateInputEvents pages (see <see cref="GnsInputEvents.ReadPage"/>).</summary>
     [LibraryImport(Dll, EntryPoint = "SimConnect_EnumerateInputEvents")]
