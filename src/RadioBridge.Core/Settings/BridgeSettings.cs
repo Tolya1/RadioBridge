@@ -27,6 +27,15 @@ public sealed record BridgeSettings
     /// <summary>Squawk set by holding ACT/STBY on XPDR: 7000 (Europe) or 1200 (US).</summary>
     public int VfrSquawk { get; init; } = 7000;
 
+    /// <summary>
+    /// ADF and DME drive the GNS 430/530 instead of the radios (X-Plane only for now): ADF types (knobs, ENT,
+    /// CRSR), DME has the other keys. Off by default.
+    /// </summary>
+    public bool GpsControl { get; init; }
+
+    /// <summary>The GPS the lower row drives with <see cref="GpsControl"/>: 2, or 1 for aircraft with one GNS. The upper row always drives GPS 1.</summary>
+    public int LowerRowGps { get; init; } = 2;
+
     /// <summary>Open the readme and third-party notices when RadioBridge starts. "Don't show again" clears it.</summary>
     public bool ShowReaderAtStart { get; init; } = true;
 

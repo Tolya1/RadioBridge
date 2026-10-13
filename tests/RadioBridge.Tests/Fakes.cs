@@ -25,6 +25,7 @@ internal sealed class FakeSim(string name = "FakeSim") : ISimBackend
     public RadioState State { get; private set; } = RadioState.Empty;
     public List<SimCommand> Sent { get; } = [];
     public SimNotice? Notice { get; private set; }
+    public bool SupportsGpsKeys { get; set; }
 
     public event Action? Changed;
 

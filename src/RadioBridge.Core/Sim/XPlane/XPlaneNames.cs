@@ -57,6 +57,39 @@ internal static class XPlaneNames
 
     public static string Dme(int index) => $"{Indicators}nav{index}_dme_distance_nm";
 
+    // GPS 1 has no number in these names, GPS 2 a "2".
+    public static string GpsDistance(int unit) => $"{Indicators}{Gps(unit)}_dme_distance_nm";
+
+    /// <summary>"The OBS course for the GPS, also known as the DTK (desired track)".</summary>
+    public static string GpsTrack(int unit) => $"sim/cockpit/radios/{Gps(unit)}_obs_degm";
+
+    /// <summary>The GPS CDI's to/from flag: 0 when there is nothing to fly to.</summary>
+    public static string GpsFromTo(int unit) => $"sim/cockpit/radios/{Gps(unit)}_fromto";
+
+    private static string Gps(int unit) => unit == 2 ? "gps2" : "gps";
+
+    /// <summary>The command for a key or knob click on X-Plane's built-in GNS 430/530 (both models use these).</summary>
+    public static string GpsCommand(int unit, GpsKey key) => $"sim/GPS/g430n{unit}_" + key switch
+    {
+        GpsKey.LargeKnobUp => "chapter_up",
+        GpsKey.LargeKnobDown => "chapter_dn",
+        GpsKey.SmallKnobUp => "page_up",
+        GpsKey.SmallKnobDown => "page_dn",
+        GpsKey.Cursor => "cursor",
+        GpsKey.Enter => "ent",
+        GpsKey.Clear or GpsKey.ClearHeld => "clr",
+        GpsKey.DirectTo => "direct",
+        GpsKey.Menu => "menu",
+        GpsKey.FlightPlan => "fpl",
+        GpsKey.Procedure => "proc",
+        GpsKey.Cdi => "cdi",
+        GpsKey.Obs => "obs",
+        GpsKey.Message => "msg",
+        GpsKey.Vnav => "vnav",
+        GpsKey.ZoomIn => "zoom_in",
+        _ => "zoom_out",
+    };
+
     private static readonly Dictionary<string, Func<RadioState, double, RadioState>> Readers = BuildReaders();
 
     public static IReadOnlyCollection<string> Datarefs => Readers.Keys;
@@ -64,6 +97,7 @@ internal static class XPlaneNames
     public static readonly string[] Commands =
     [
         Flip(Tunable.Com1), Flip(Tunable.Com2), Flip(Tunable.Nav1), Flip(Tunable.Nav2),
+        .. new[] { 1, 2 }.SelectMany(unit => Enum.GetValues<GpsKey>().Select(key => GpsCommand(unit, key))).Distinct(),
     ];
 
     /// <summary>Applies one raw dataref value to the state; unknown names leave it unchanged.</summary>
@@ -104,6 +138,12 @@ internal static class XPlaneNames
         readers[Dme(2)] = (s, v) => s with { Dme2Nm = v };
         readers[Squawk] = (s, v) => s with { Squawk = (int)Math.Round(v) };
         readers[Baro] = (s, v) => s with { BaroHpa = v * DisplayFormat.HpaPerInHg };
+        foreach (int unit in (int[])[1, 2])
+        {
+            readers[GpsDistance(unit)] = (s, v) => s.WithGps(unit, s.GetGps(unit) with { DistanceNm = v });
+            readers[GpsTrack(unit)] = (s, v) => s.WithGps(unit, s.GetGps(unit) with { TrackDeg = v });
+            readers[GpsFromTo(unit)] = (s, v) => s.WithGps(unit, s.GetGps(unit) with { HasWaypoint = Math.Round(v) is 1 or 2 });
+        }
         return readers;
     }
 }

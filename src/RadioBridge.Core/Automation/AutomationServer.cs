@@ -125,6 +125,8 @@ public sealed class AutomationServer : IDisposable
                 lower = view.Lower,
                 upperActivity = view.UpperActivity,
                 lowerActivity = view.LowerActivity,
+                upperGps = view.UpperGps,
+                lowerGps = view.LowerGps,
             },
             displays = view.Displays,
             displayReport = Convert.ToHexString(_panel.DisplayReport),

@@ -1,4 +1,5 @@
 using System.Globalization;
+using RadioBridge.Core.Sim;
 
 namespace RadioBridge.Core.Radio;
 
@@ -48,6 +49,22 @@ public static class DisplayFormat
     }
 
     public static string Squawk(int code) => code < 0 ? "" : code.ToString("0000", Inv);
+
+    /// <summary>What a GPS display shows without an active waypoint (or with the GPS off).</summary>
+    public const string NoGps = "----";
+
+    /// <summary>GPS distance to the active waypoint with one decimal.</summary>
+    public static string GpsDistance(GpsNav gps) =>
+        !gps.HasWaypoint || double.IsNaN(gps.DistanceNm) ? NoGps : Math.Clamp(gps.DistanceNm, 0, 9999.9).ToString("0.0", Inv);
+
+    /// <summary>GPS desired track in whole degrees, 001 to 360 as on a compass.</summary>
+    public static string GpsTrack(GpsNav gps)
+    {
+        if (!gps.HasWaypoint || double.IsNaN(gps.TrackDeg))
+            return NoGps;
+        int degrees = ((int)Math.Round(gps.TrackDeg) % 360 + 360) % 360;
+        return (degrees == 0 ? 360 : degrees).ToString("000", Inv);
+    }
 
     /// <summary>Marks the value the knobs currently edit by lighting the last decimal point.</summary>
     public static string WithFocus(string text) => text.Length == 0 ? text : text + ".";

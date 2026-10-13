@@ -20,7 +20,8 @@ namespace RadioBridge.FakeXPlane;
 /// independently of RadioBridge, so the two can catch each other's mistakes.
 /// <para>Modelled behaviour: COM radios snap to 8.33 or (when <see cref="Com833Capable"/> is off)
 /// 25 kHz channels; the *_hz_833 and 10 kHz COM datarefs stay in sync; flip commands swap active and
-/// standby; subscribers get all values first and then only changes, about ten times a second.</para>
+/// standby; GNS 430/530 key presses and knob clicks are counted (<see cref="GnsPresses"/>), but the GNS
+/// itself isn't modelled; subscribers get all values first and then only changes, about ten times a second.</para>
 /// </summary>
 public sealed class XPlaneEmulator : IAsyncDisposable
 {
@@ -68,10 +69,54 @@ public sealed class XPlaneEmulator : IAsyncDisposable
         }
         Add($"{Act}transponder_code", "int", 7000);
         Add("sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot", "float", 29.92);
+        foreach (var gps in (string[])["gps", "gps2"])
+        {
+            Add($"sim/cockpit2/radios/indicators/{gps}_dme_distance_nm", "float", 0);
+            Add($"sim/cockpit/radios/{gps}_obs_degm", "float", 0);
+            Add($"sim/cockpit/radios/{gps}_fromto", "int", 0); // flagged: no waypoint
+        }
 
         foreach (var name in (string[])["sim/radios/com1_standy_flip", "sim/radios/com2_standy_flip", "sim/radios/nav1_standy_flip",
                      "sim/radios/nav2_standy_flip", "sim/instruments/barometer_2992", "sim/instruments/barometer_std"])
             _commands[name] = _nextId += 3;
+        foreach (int unit in (int[])[1, 2])
+        {
+            foreach (var key in GnsKeys)
+                _commands[$"{Gns}g430n{unit}_{key}"] = _nextId += 3;
+        }
+    }
+
+    private const string Gns = "sim/GPS/";
+
+    /// <summary>The GNS 430/530 commands, from X-Plane 12.4.4's Commands.txt (sim/GPS/g430n1_* and g430n2_*).</summary>
+    private static readonly string[] GnsKeys =
+    [
+        "coarse_down", "coarse_up", "fine_down", "fine_up", "chapter_up", "chapter_dn", "page_up", "page_dn", "zoom_in", "zoom_out",
+        "nav_com_tog", "cdi", "obs", "msg", "fpl", "proc", "vnav", "direct", "menu", "clr", "ent", "com_ff", "nav_ff", "cursor",
+    ];
+
+    private readonly List<GnsPress> _gnsPresses = [];
+    private readonly Dictionary<long, DateTime> _gnsHeldUntil = new();
+
+    /// <summary>
+    /// GNS key presses and knob clicks the emulated GNS counted, oldest first. A press that starts while the same
+    /// command is still held is not a click of its own (X-Plane's GNS may well treat it so) and is left out.
+    /// </summary>
+    public IReadOnlyList<GnsPress> GnsPresses
+    {
+        get { lock (_gate) return _gnsPresses.ToList(); }
+    }
+
+    /// <summary>Presses of a GNS command that was still held, which <see cref="GnsPresses"/> leaves out.</summary>
+    public int IgnoredGnsPresses { get; private set; }
+
+    public void ClearGnsPresses()
+    {
+        lock (_gate)
+        {
+            _gnsPresses.Clear();
+            IgnoredGnsPresses = 0;
+        }
     }
 
     public int Port { get; private set; }
@@ -260,6 +305,8 @@ public sealed class XPlaneEmulator : IAsyncDisposable
     {
         if (!_commands.ContainsValue(id))
             return false;
+        if (IsGns(id))
+            return PressGns(id, TimeSpan.FromSeconds(seconds));
         if (!ActsOnRelease(id))
             return RunCommand(id);
         if (seconds >= Frame.TotalSeconds)
@@ -273,8 +320,30 @@ public sealed class XPlaneEmulator : IAsyncDisposable
         return true;
     }
 
+    private bool IsGns(long id) => _commands.FirstOrDefault(c => c.Value == id).Key?.StartsWith(Gns, StringComparison.Ordinal) == true;
+
+    /// <summary>A GNS press (call under the lock): counted unless the same command is still held.</summary>
+    private bool PressGns(long id, TimeSpan held)
+    {
+        var now = DateTime.UtcNow;
+        if (_gnsHeldUntil.TryGetValue(id, out var until) && now < until)
+        {
+            IgnoredGnsPresses++;
+            return true;
+        }
+        _gnsHeldUntil[id] = now + held;
+        string name = _commands.First(c => c.Value == id).Key;
+        _gnsPresses.Add(new GnsPress(name[Gns.Length..], now, held));
+        return true;
+    }
+
     private void Begin(long id)
     {
+        if (IsGns(id))
+        {
+            PressGns(id, TimeSpan.FromDays(1)); // held until End
+            return;
+        }
         if (ActsOnRelease(id))
             _held[id] = DateTime.UtcNow;
         else
@@ -283,6 +352,7 @@ public sealed class XPlaneEmulator : IAsyncDisposable
 
     private void End(long id)
     {
+        _gnsHeldUntil.Remove(id);
         if (_held.Remove(id, out var since) && DateTime.UtcNow - since >= Frame)
             RunCommand(id);
     }
@@ -483,3 +553,8 @@ public sealed class XPlaneEmulator : IAsyncDisposable
         }
     }
 }
+
+/// <summary>A GNS key press or knob click the emulator counted.</summary>
+/// <param name="Command">The command without "sim/GPS/", e.g. "g430n1_page_up".</param>
+/// <param name="Held">How long it was held (the request's duration).</param>
+public sealed record GnsPress(string Command, DateTime At, TimeSpan Held);

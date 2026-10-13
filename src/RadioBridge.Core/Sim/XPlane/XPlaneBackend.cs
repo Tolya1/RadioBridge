@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
@@ -32,6 +33,21 @@ public sealed class XPlaneBackend : ISimBackend
     /// </summary>
     internal const double PressSeconds = 0.15;
 
+    /// <summary>
+    /// How long a GNS knob click (or map range step) is held: long enough to span a frame, and short, because the
+    /// next click of the same knob waits for this one to end (<see cref="GpsRepeatGap"/>).
+    /// </summary>
+    internal const double KnobClickSeconds = 0.05;
+
+    /// <summary>How long CLR is held for "CLR held", the GNS's way back to the default NAV page.</summary>
+    internal const double ClearHeldSeconds = 2.5;
+
+    /// <summary>
+    /// How long after a GNS command ends it can start again. A press that starts while the previous press of the
+    /// same command is still held need not count as a click of its own, which would lose detents of a fast spin.
+    /// </summary>
+    internal static readonly TimeSpan GpsRepeatGap = TimeSpan.FromMilliseconds(50);
+
     private const string AircraftPath = "sim/aircraft/view/acf_relative_path";
 
     private readonly Func<int> _port;
@@ -58,6 +74,9 @@ public sealed class XPlaneBackend : ISimBackend
 
     public string Name => "X-Plane";
     public bool IsConnected => _session is not null;
+
+    /// <summary>X-Plane's built-in GNS 430/530 has a command for every key and knob.</summary>
+    public bool SupportsGpsKeys => true;
 
     /// <summary>X-Plane's values, with what RadioBridge set and X-Plane hasn't answered yet laid over them (<see cref="XPlaneRequests"/>).</summary>
     public RadioState State => _session is { } session ? session.Requests.Apply(_state) : _state;
@@ -114,6 +133,34 @@ public sealed class XPlaneBackend : ISimBackend
             case SetBaroStandard:
                 SetDataref(session, XPlaneNames.Baro, XPlaneNames.StandardBaroRaw);
                 break;
+            case PressGpsKey c:
+                double seconds = c.Key switch
+                {
+                    GpsKey.ClearHeld => ClearHeldSeconds,
+                    GpsKey.LargeKnobUp or GpsKey.LargeKnobDown or GpsKey.SmallKnobUp or GpsKey.SmallKnobDown
+                        or GpsKey.ZoomIn or GpsKey.ZoomOut => KnobClickSeconds,
+                    _ => PressSeconds,
+                };
+                session.GpsPresses.Writer.TryWrite((XPlaneNames.GpsCommand(c.Unit, c.Key), seconds));
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Presses GNS keys in the order they came. A command whose previous press is still held, or ended less than
+    /// <see cref="GpsRepeatGap"/> ago, waits for it (and so does everything queued after it), so each click of a
+    /// fast spin reaches the GNS as a click of its own.
+    /// </summary>
+    private async Task PressGpsKeysAsync(Session session, CancellationToken ct)
+    {
+        var free = new Dictionary<string, long>(); // command -> timestamp from which it can be pressed again
+        await foreach (var (name, seconds) in session.GpsPresses.Reader.ReadAllAsync(ct))
+        {
+            long now = Stopwatch.GetTimestamp();
+            if (free.TryGetValue(name, out long at) && at > now)
+                await Task.Delay(Stopwatch.GetElapsedTime(now, at), ct);
+            RunCommand(session, name, seconds: seconds);
+            free[name] = Stopwatch.GetTimestamp() + (long)((seconds + GpsRepeatGap.TotalSeconds) * Stopwatch.Frequency);
         }
     }
 
@@ -200,6 +247,7 @@ public sealed class XPlaneBackend : ISimBackend
 
         var sender = SendLoopAsync(session, sessionCts.Token);
         var watchdog = WatchAnswersAsync(session, sessionCts.Token);
+        var presser = PressGpsKeysAsync(session, sessionCts.Token);
         _session = session;
         _warnedForbidden = false; // warn again should it ever be refused again
         _warnedUnsupported = false;
@@ -228,6 +276,7 @@ public sealed class XPlaneBackend : ISimBackend
             await sessionCts.CancelAsync();
             try { await sender; } catch (Exception) { /* the socket is gone anyway */ }
             try { await watchdog; } catch (OperationCanceledException) { }
+            try { await presser; } catch (OperationCanceledException) { }
             _recorder.Record("xplane", "disconnected");
             Changed?.Invoke();
         }
@@ -635,7 +684,8 @@ public sealed class XPlaneBackend : ISimBackend
     }
 
     /// <param name="apply">What the command does to the radios, laid over X-Plane's values until it is answered.</param>
-    private void RunCommand(Session session, string name, Func<RadioState, RadioState>? apply = null)
+    /// <param name="seconds">How long the command is held down.</param>
+    private void RunCommand(Session session, string name, Func<RadioState, RadioState>? apply = null, double seconds = PressSeconds)
     {
         if (!session.CommandIds.TryGetValue(name, out long id))
         {
@@ -650,7 +700,7 @@ public sealed class XPlaneBackend : ISimBackend
                 w.WriteStartObject();
                 w.WriteNumber("id", id);
                 w.WriteBoolean("is_active", true);
-                w.WriteNumber("duration", PressSeconds); // X-Plane releases it after this long
+                w.WriteNumber("duration", seconds); // X-Plane releases it after this long
                 w.WriteEndObject();
             });
             session.Requests.Sent(request, apply: apply);
@@ -659,7 +709,7 @@ public sealed class XPlaneBackend : ISimBackend
             {
                 w.WriteNumber("req", request);
                 w.WriteString("command", name);
-                w.WriteNumber("pressSeconds", PressSeconds);
+                w.WriteNumber("pressSeconds", seconds);
             });
         }
     }
@@ -702,6 +752,10 @@ public sealed class XPlaneBackend : ISimBackend
         public IReadOnlyDictionary<long, string> DatarefNames { get; } = datarefIds.ToDictionary(p => p.Value, p => p.Key);
         public IReadOnlyDictionary<string, long> CommandIds { get; } = commandIds;
         public Channel<byte[]> Outbox { get; } = Channel.CreateUnbounded<byte[]>(new UnboundedChannelOptions { SingleReader = true });
+
+        /// <summary>GNS commands waiting their turn, with how long each is held (see PressGpsKeysAsync).</summary>
+        public Channel<(string Command, double Seconds)> GpsPresses { get; } =
+            Channel.CreateUnbounded<(string, double)>(new UnboundedChannelOptions { SingleReader = true });
 
         /// <summary>Requests in flight, coalesced writes, and values X-Plane hasn't answered yet.</summary>
         public XPlaneRequests Requests { get; } = new();

@@ -1,3 +1,4 @@
+using RadioBridge.Core;
 using RadioBridge.Core.Panel;
 using RadioBridge.Core.Radio;
 using RadioBridge.Core.Settings;
@@ -262,6 +263,67 @@ public sealed class RadioScenarios(AppFixture fx) : IAsyncLifetime
             ("sim/cockpit2/radios/indicators/nav1_dme_distance_nm", 12.3), ("sim/cockpit2/radios/indicators/nav2_dme_distance_nm", 4.56));
 
         await App.WaitForAsync(s => s.Displays.LowerLeft == "12.3" && s.Displays.LowerRight == "4.6", "the DME distances");
+    }
+
+    /// <summary>Waits for the GNS clicks the emulator counts (a real X-Plane can't tell which ones arrived).</summary>
+    private async Task<List<string>> GnsPressesAsync(int count)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (fx.Emulator!.GnsPresses.Count < count && DateTime.UtcNow < deadline)
+            await Task.Delay(50);
+        await Task.Delay(300); // nothing more arrives
+        return fx.Emulator.GnsPresses.Select(p => p.Command).ToList();
+    }
+
+    [SkippableFact]
+    public async Task With_gps_control_on_adf_and_dme_type_a_direct_to_into_the_gns()
+    {
+        Skip.If(fx.Emulator is null, "Emulator only: it counts the GNS clicks it gets.");
+        await App.PutSettingsAsync(fx.InitialSettings with { GpsControl = true, LowerRowGps = 1 }); // one GNS: both rows on it
+        await App.SelectAsync(Upper, Selector.Adf);
+        await App.SelectAsync(Lower, Selector.Dme);
+        await GivenAsync(s => s.Gps1.HasWaypoint,
+            ("sim/cockpit2/radios/indicators/gps_dme_distance_nm", 23.4), ("sim/cockpit/radios/gps_obs_degm", 273), ("sim/cockpit/radios/gps_fromto", 1));
+        await App.WaitForAsync(s => s.Displays == new PanelDisplays("23.4", "273", "0", "23.4"), "distance and track on ADF, D→ chosen on DME");
+        fx.Emulator!.ClearGnsPresses();
+
+        await App.PressAsync(Lower);                          // D→
+        await App.TurnAsync(Upper, Knob.Inner, +1, detents: 3); // first letter
+        await App.TurnAsync(Upper, Knob.Outer, +1);             // next letter
+        await App.TurnAsync(Upper, Knob.Inner, -1, detents: 2);
+        await App.PressAsync(Upper);                          // ENT: the waypoint
+        await App.PressAsync(Upper);                          // ENT: activate
+
+        Assert.Equal<string>(
+            ["g430n1_direct", "g430n1_page_up", "g430n1_page_up", "g430n1_page_up", "g430n1_chapter_up", "g430n1_page_dn", "g430n1_page_dn", "g430n1_ent", "g430n1_ent"],
+            await GnsPressesAsync(9));
+
+        fx.Emulator.ClearGnsPresses();
+        await App.TurnAsync(Lower, Knob.Inner, +1, detents: 2);
+        await App.WaitForAsync(s => s.Displays.LowerLeft == "2" && s.Panel.LowerGps == new GpsRow(1, "FPL"), "FPL chosen on DME");
+        await App.PressAsync(Lower);                   // FPL
+        await App.PressAsync(Upper, holdMs: 800);      // CRSR
+        await App.PressAsync(Lower, holdMs: 800);      // CLR
+
+        Assert.Equal<string>(["g430n1_fpl", "g430n1_cursor", "g430n1_clr"], await GnsPressesAsync(3));
+        Assert.Equal(0, fx.Emulator.IgnoredGnsPresses);
+    }
+
+    [SkippableFact]
+    public async Task With_gps_control_on_the_lower_row_drives_gps_2()
+    {
+        Skip.If(fx.Emulator is null, "Emulator only: it counts the GNS clicks it gets.");
+        await App.PutSettingsAsync(fx.InitialSettings with { GpsControl = true });
+        await App.SelectAsync(Lower, Selector.Adf);
+        await GivenAsync(s => !s.Gps2.HasWaypoint, ("sim/cockpit/radios/gps2_fromto", 0));
+        await App.WaitForAsync(s => s.Displays.LowerLeft == "----" && s.Panel.LowerGps == new GpsRow(2, null), "GPS 2 without a waypoint");
+        fx.Emulator!.ClearGnsPresses();
+
+        await App.TurnAsync(Lower, Knob.Inner, +1);
+        await App.SelectAsync(Lower, Selector.Dme);
+        await App.PressAsync(Lower);
+
+        Assert.Equal<string>(["g430n2_page_up", "g430n2_direct"], await GnsPressesAsync(2));
     }
 
     [Fact]

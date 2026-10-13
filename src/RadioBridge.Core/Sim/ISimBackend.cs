@@ -21,6 +21,12 @@ public interface ISimBackend : IDisposable
     /// <summary>Why this simulator can't connect, or null. Changes raise <see cref="Changed"/>.</summary>
     SimNotice? Notice { get; }
 
+    /// <summary>
+    /// Whether this simulator takes <see cref="PressGpsKey"/>. While the connected one doesn't, ADF and DME stay
+    /// radios even with GPS control switched on.
+    /// </summary>
+    bool SupportsGpsKeys => false;
+
     /// <summary>Raised from a background thread when the connection, <see cref="State"/> or <see cref="Notice"/> changes.</summary>
     event Action? Changed;
 

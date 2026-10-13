@@ -77,6 +77,23 @@ reports it (or 800 ms pass). Some radios take a moment and swap in steps: REP's 
 press ends and writes the standby a frame before the active, so without the hold the display would
 show the old pair, then the same frequency twice, then the new pair.
 
+### GPS control
+
+With `GpsControl` on, a row whose selector is on ADF or DME drives a GNS 430/530 instead of the radios,
+as long as the connected simulator takes GPS keys (`ISimBackend.SupportsGpsKeys`, so far only X-Plane;
+otherwise ADF and DME stay radios). The upper row drives GPS 1, the lower row `LowerRowGps` (2, or 1 for
+aircraft with one GNS). The controller turns input into `PressGpsKey(unit, GpsKey)` commands:
+
+- **ADF** is the GNS's right-hand corner: outer knob = large knob, inner knob = small knob, a press = ENT,
+  a hold = CRSR. Displays: distance and desired track to the active waypoint, `----` without one.
+- **DME** has the other keys. The inner knob moves a per-row choice through a fixed list, counted in clicks
+  from D→ (`-1` CLR held, `0` D→, then MENU, FPL, PROC, CDI, OBS, MSG, VNAV), shown as that number on the
+  left display (the panel has no letters; the view's `GpsRow` gives the window the name). A press sends the
+  chosen key and puts the choice back on D→, a hold is CLR, the outer knob is the map range. Moving the
+  selector also resets the choice.
+
+GPS keys aren't pending values: nothing is laid over the display, which shows only what the GPS reports.
+
 ## Simulators
 
 Every simulator implements `ISimBackend`:
@@ -84,6 +101,7 @@ Every simulator implements `ISimBackend`:
 ```csharp
 string Name; bool IsConnected; RadioState State; event Action Changed;
 void Start(); void Send(SimCommand command);
+bool SupportsGpsKeys; // default false: takes PressGpsKey
 ```
 
 `RadioState` is immutable and uses sim-neutral units:
@@ -93,6 +111,7 @@ void Start(); void Send(SimCommand command);
 - DME in nautical miles (NaN when there is no station)
 - squawk as four octal digits
 - altimeter in hPa
+- each GPS's distance (NM) and desired track (degrees) to its active waypoint, and whether it has one
 
 Each backend converts to and from its simulator's units. `SimRouter` runs all enabled backends and
 exposes the first one that connects. It fails over when that one disconnects.
@@ -127,6 +146,14 @@ This backend uses X-Plane 12's built-in [Web API](https://developer.x-plane.com/
 | Squawk | `sim/cockpit2/radios/actuators/transponder_code` | octal digits |
 | Altimeter, and standard pressure | `sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot` | inHg |
 | Swap | `sim/radios/{com,nav}{n}_standy_flip` (Laminar's spelling) | command, held 150 ms |
+| GPS 1/2 distance, desired track, waypoint | `sim/cockpit2/radios/indicators/gps[2]_dme_distance_nm`, `sim/cockpit/radios/gps[2]_obs_degm`, `sim/cockpit/radios/gps[2]_fromto` (0 = flag: no waypoint) | NM, degrees, enum |
+| GNS 430/530 keys and knobs | `sim/GPS/g430n{1,2}_{chapter_up,chapter_dn,page_up,page_dn,cursor,ent,clr,direct,menu,fpl,proc,cdi,obs,msg,vnav,zoom_in,zoom_out}` | commands: knob clicks held 50 ms, keys 150 ms, CLR held 2.5 s |
+
+**GNS keys go out one by one.** A press that starts while the same command is still held need not count
+as a click of its own, so a fast knob spin could lose detents. GPS keys therefore have their own queue
+per connection: they leave in the order they came, and a command waits until its previous press has
+ended plus 50 ms. A knob click is held 50 ms, so the small knob types up to about ten letters a second.
+Whether X-Plane's GNS has a long-press CLR is unchecked; "CLR held" holds `clr` for 2.5 s.
 
 **When X-Plane answers late.** X-Plane answers every request with a `result` message, normally within a
 frame or two. One user's X-Plane answered about 30 s late, in order (GitHub issue #1): every knob change

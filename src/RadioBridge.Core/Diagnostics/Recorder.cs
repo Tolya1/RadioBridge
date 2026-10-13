@@ -263,6 +263,17 @@ public static class RecorderJson
         w.WriteNumberOrNull("dme2", s.Dme2Nm);
         w.WriteNumber("squawk", s.Squawk);
         w.WriteNumberOrNull("baroHpa", s.BaroHpa);
+        WriteGps(w, "gps1", s.Gps1);
+        WriteGps(w, "gps2", s.Gps2);
+        w.WriteEndObject();
+    }
+
+    private static void WriteGps(Utf8JsonWriter w, string name, Sim.GpsNav gps)
+    {
+        w.WriteStartObject(name);
+        w.WriteBoolean("waypoint", gps.HasWaypoint);
+        w.WriteNumberOrNull("distanceNm", gps.DistanceNm);
+        w.WriteNumberOrNull("trackDeg", gps.TrackDeg);
         w.WriteEndObject();
     }
 

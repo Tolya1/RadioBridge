@@ -7,7 +7,8 @@ using RadioBridge.Core.Sim;
 
 namespace RadioBridge.FunctionalTests;
 
-public sealed record PanelInfo(bool Connected, Selector? Upper, Selector? Lower, RowActivity UpperActivity, RowActivity LowerActivity);
+public sealed record PanelInfo(bool Connected, Selector? Upper, Selector? Lower, RowActivity UpperActivity, RowActivity LowerActivity,
+    GpsRow? UpperGps = null, GpsRow? LowerGps = null);
 
 public sealed record SimInfo(bool Connected, string Name, RadioState State, SimNotice? Notice);
 
@@ -109,7 +110,7 @@ public sealed class AppClient(HttpClient http)
             if (condition(state))
                 return state;
             if (DateTime.UtcNow > deadline)
-                throw new TimeoutException($"Timed out waiting for {what}.\nDisplays: {state.Displays}\nSim: {state.Sim}");
+                throw new TimeoutException($"Timed out waiting for {what}.\nDisplays: {state.Displays}\nPanel: {state.Panel}\nSim: {state.Sim}");
             await Task.Delay(50);
         }
     }

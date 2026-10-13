@@ -94,6 +94,9 @@ there first when a scenario fails. The failure message also includes the last di
   (emulator only).
 - An X-Plane that answers late (3 s here; 30 s in GitHub issue #1) doesn't make the panel spring back:
   it keeps what was set, says X-Plane is slow, and X-Plane ends up with the right value (emulator only).
+- With GPS control on, ADF and DME type a Direct-to into the GNS (D→, letters, ENT, ENT), choose and
+  press FPL, and hold for CRSR and CLR; the lower row drives GPS 2 by default. The emulator checks the
+  exact sequence of GNS clicks and that none started while the same command was still held (emulator only).
 - A debug recording of a knob turn and two swaps holds the whole story: the panel input, the
   controller's decisions, the displays, what went to the simulator and its replies, the values that
   came back by name, and the log.
@@ -163,7 +166,9 @@ Behind the API is a small radio model. COM radios snap to 8.33 or 25 kHz channel
 `barometer_2992` sets 29.92125 like the real thing. With `FlipOnRelease` the radios behave like REP's
 KX165: they swap when a held flip command is released, and ignore a press shorter than a frame. With
 `RequestDelay` every WebSocket request is handled that much later, in order, like an X-Plane that has
-fallen behind.
+fallen behind. The GNS 430/530 commands (`sim/GPS/g430n1_*`, `g430n2_*`) aren't modelled, only counted:
+`GnsPresses` lists each key press and knob click in order with how long it was held, and a press that
+starts while the same command is still held is left out (`IgnoredGnsPresses`), so tests catch lost clicks.
 `AddDataref` adds datarefs such as an add-on's, for the recording's watch list. It defines its own
 dataref names from X-Plane's `DataRefs.txt` instead of sharing RadioBridge's, so a wrong name on
 either side makes a test fail.

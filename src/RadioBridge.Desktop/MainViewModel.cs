@@ -48,8 +48,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool HasNotice => _view.Notice is not null;
     public string Notice => _view.Notice?.Text ?? "";
     public bool CanLocateSimConnect => _view.Notice?.CanLocateSimConnect == true;
-    public string UpperMode => ModeText(_view.Upper);
-    public string LowerMode => ModeText(_view.Lower);
+    public string UpperMode => ModeText(_view.Upper, _view.UpperGps);
+    public string LowerMode => ModeText(_view.Lower, _view.LowerGps);
     public string UpperLeft => _view.Displays.UpperLeft;
     public string UpperRight => _view.Displays.UpperRight;
     public string LowerLeft => _view.Displays.LowerLeft;
@@ -139,6 +139,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         get => S.VfrSquawk == 1200;
         set { if (value) Update(s => s with { VfrSquawk = 1200 }); }
+    }
+
+    public bool GpsControl
+    {
+        get => S.GpsControl;
+        set => Update(s => s with { GpsControl = value });
+    }
+
+    public bool LowerRowGps2
+    {
+        get => S.LowerRowGps != 1;
+        set { if (value) Update(s => s with { LowerRowGps = 2 }); }
+    }
+
+    public bool LowerRowGps1
+    {
+        get => S.LowerRowGps == 1;
+        set { if (value) Update(s => s with { LowerRowGps = 1 }); }
     }
 
     public bool TestMode
@@ -266,17 +284,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private static int ToInt(decimal? value, int fallback) => value is { } v ? (int)v : fallback;
 
-    private static string ModeText(Selector? selector) => selector switch
-    {
-        null => "—",
-        Selector.Com1 => "COM1",
-        Selector.Com2 => "COM2",
-        Selector.Nav1 => "NAV1",
-        Selector.Nav2 => "NAV2",
-        Selector.Adf => "ADF",
-        Selector.Dme => "DME",
-        _ => "XPDR",
-    };
+    // A row driving a GPS shows which one, and on DME the key a tap presses (the panel can only show its number).
+    private static string ModeText(Selector? selector, GpsRow? gps) => gps is { } g
+        ? g.Key is null ? $"GPS {g.Unit}" : $"GPS {g.Unit}\n{g.Key}"
+        : selector switch
+        {
+            null => "—",
+            Selector.Com1 => "COM1",
+            Selector.Com2 => "COM2",
+            Selector.Nav1 => "NAV1",
+            Selector.Nav2 => "NAV2",
+            Selector.Adf => "ADF",
+            Selector.Dme => "DME",
+            _ => "XPDR",
+        };
 
     // null = every property, which is cheap for a view this small.
     private void Raise([CallerMemberName] string? name = null) =>

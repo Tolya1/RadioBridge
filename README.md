@@ -11,6 +11,8 @@ general-purpose panel software, made for one panel and done properly:
   is running. X-Plane needs no plugin, because RadioBridge uses X-Plane's built-in Web API.
 - **A panel that never fights you.** Fast spins accelerate, no detent is lost while the sim catches
   up, and the displays always settle on what the simulator really has.
+- **The GPS from the panel (X-Plane, optional).** ADF and DME can drive the GNS 430/530: type a
+  waypoint with the knobs and press the GNS keys with ACT/STBY.
 - **Plays well with other panel software.** It runs alongside SPAD.neXt or HangarControl when they
   drive your other panels.
 - **See it work.** The window mirrors the displays and shows the knobs and ACT/STBY switches reacting.
@@ -23,6 +25,7 @@ general-purpose panel software, made for one panel and done properly:
 - [What works where](#what-works-where)
 - [Getting started](#getting-started)
 - [Using the panel](#using-the-panel)
+- [Controlling the GPS](#controlling-the-gps)
 - [Try it without a simulator](#try-it-without-a-simulator)
 - [The window and the tray](#the-window-and-the-tray)
 - [Settings](#settings)
@@ -138,6 +141,8 @@ Each row of the panel works on its own. Turn its selector to choose what that ro
 | **NAV1 / NAV2** | active | standby | standby ±1 MHz | standby ±50 kHz | swap | – |
 | **ADF** | ADF1 (upper row) or ADF2 (lower row) | – | ±10 kHz | ±1 kHz | – | – |
 | **DME** | DME1 distance | DME2 distance | – | – | – | – |
+
+With GPS control on, ADF and DME drive the GPS instead: see [Controlling the GPS](#controlling-the-gps).
 | **XPDR** | squawk | altimeter | first two squawk digits | last two squawk digits | edit the altimeter instead (outer ±10, inner ±1) and back | VFR squawk, or standard pressure when the altimeter is selected |
 
 Some details:
@@ -159,6 +164,39 @@ Some details:
   this works for them too.
 - When RadioBridge starts, it reads where the selectors are, so the displays fill in right away. On
   macOS this may need one turn of a selector.
+
+## Controlling the GPS
+
+In X-Plane, the ADF and DME positions can drive the built-in **GNS 430/530** instead of the ADF and
+DME radios. Turn it on in **Settings › GPS** (off by default). The upper row controls GPS 1. The lower
+row controls GPS 2, or GPS 1 as well for aircraft with one GNS (**Lower row controls**). On each row,
+ADF types and DME has the other keys:
+
+| Selector | Left display | Right display | Outer knob | Inner knob | ACT/STBY press | ACT/STBY hold |
+|---|---|---|---|---|---|---|
+| **ADF** | distance to the active waypoint | desired track | large right knob: chapter, or the next field or letter | small right knob: page, or the letter | ENT | CRSR |
+| **DME** | the chosen key, as a number | distance to the active waypoint | map range | choose a key | press the chosen key | CLR |
+
+The DME row's inner knob counts from D→. The panel can only show digits, so it shows the number;
+the window shows the key's name next to the row.
+
+| Clicks | −1 | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|---|---|
+| Key | CLR held (default NAV page) | D→ | MENU | FPL | PROC | CDI | OBS | MSG | VNAV |
+
+After each key the choice goes back to D→, so a plain press on DME is always Direct-to. For example,
+with the lower row set to GPS 1, the upper row on ADF and the lower on DME, a Direct-to goes:
+
+1. DME: press (D→). The waypoint field opens with the cursor on its first letter.
+2. ADF: small knob to the first letter, big knob one click right, small knob to the next letter, and so on.
+3. ADF: press twice (ENT confirms the waypoint, ENT activates it).
+
+With one row, flip the selector between ADF and DME as you go; that sends nothing to the GPS.
+
+- Without an active waypoint, or with the GPS off, distance and track show `----`.
+- Every knob click reaches the GNS as a click of its own, in order, so a fast spin loses nothing.
+- **X-Plane only for now.** MSFS's GNS doesn't take its keys from SimConnect directly, so in MSFS
+  ADF and DME stay radios. Add-on GPS units with their own commands (RealityXP, TDS GTNxi) aren't covered.
 
 ## Try it without a simulator
 
@@ -220,6 +258,8 @@ Settings are in the window and are saved immediately to `settings.json` in the d
 | `BaroUnit` | `Hectopascal` | Altimeter in `Hectopascal` or `InchesOfMercury` |
 | `VfrSquawk` | `7000` | Squawk set by holding ACT/STBY on XPDR: `7000` (Europe) or `1200` (US) |
 | `ComAcceleration` | on, 20 ms ×3, 40 ms ×2 | COM1/COM2 knob acceleration thresholds and multipliers (nothing else accelerates) |
+| `GpsControl` | `false` | ADF and DME drive the GNS 430/530 instead of the radios ([X-Plane](#controlling-the-gps)) |
+| `LowerRowGps` | `2` | The GPS the lower row controls with `GpsControl`: `2`, or `1` for aircraft with one GNS |
 | `LongPressMs` | `600` | How long ACT/STBY must be held for a long press |
 | `TestMode` | `false` | Built-in test radios while no simulator is connected |
 | `ShowReaderAtStart` | `true` | Open the readme and notices window when RadioBridge starts ("Don't show again" clears it) |
@@ -260,7 +300,7 @@ run with both `--automation` and `--no-panel`, which never touches the panel (se
 | Symptom | What to check |
 |---|---|
 | *Panel not found* | Is the panel plugged in directly (not through an unpowered hub)? On Linux, install the udev rule. On Windows, the panel shows as a HID device `VID_06A3&PID_0D05`. `--panel-test` checks the hardware on its own. |
-| The window's knobs react but the sim doesn't change | The status shows whether a simulator (or test mode) is connected. Check the selector position: DME is read-only. |
+| The window's knobs react but the sim doesn't change | The status shows whether a simulator (or test mode) is connected. Check the selector position: DME is read-only (unless GPS control is on). |
 | Displays flicker or the knobs do two things | Another program drives the radio panel too. See [Other panel software](#2-other-panel-software). |
 | Displays stay blank | No simulator is connected (turn on test mode to try the panel), or on macOS move a selector once. |
 | The window is gone but RadioBridge still runs | The tray option is on and the window was closed. Launch RadioBridge again to bring it back, or use the tray icon (look in the hidden icons, `^`). |
