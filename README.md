@@ -205,7 +205,7 @@ if one were: frequencies tune, ACT/STBY swaps, squawk and altimeter change, and 
 distances slowly count (DME1 down, DME2 up) so you can see live updates. As soon as MSFS or X-Plane connects, the panel switches to it, and
 it goes back to test mode when the simulator quits.
 
-Turn test mode on in **Settings › Test mode**, from the tray menu, or for one run with
+Turn test mode on in **Settings › Simulators › Test mode**, from the tray menu, or for one run with
 `--test-mode`. The window shows **Test mode** where the simulator name usually is.
 
 To check the panel hardware itself, run `RadioBridge --panel-test` (with RadioBridge itself not
@@ -222,7 +222,7 @@ and prints every knob, selector and button event for 20 seconds.
 - **Status** at the top: whether the panel is connected, and which simulator (or test mode) is driving it.
   When a simulator can't connect for a reason you can fix (MSFS is running but no SimConnect library
   was found, X-Plane refuses connections or is too old), a banner under the status says so.
-- **Settings**, folded away below.
+- **Settings**, folded away below, in tabs: **Radios**, **Knobs** (COM acceleration, long press), **GPS**, **Simulators** (and test mode), **Window** and **Debug**.
 - **Record debug log** under the settings: see [Reporting a problem](#reporting-a-problem).
 - **Readme**, **License** and **Third-party notices** buttons, and the version (with the commit it was
   built from) for bug reports. They open the documents that are built into the executable, so

@@ -67,6 +67,20 @@
             <Setter Property="Width" Value="120" />
             <Setter Property="FormatString" Value="0" />
         </Style>
+        <Style Selector="TabControl.settings TabItem">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="Padding" Value="10,0" />
+        </Style>
+        <!-- every tab as tall as the tallest (Knobs), so the window doesn't change size between tabs -->
+        <Style Selector="StackPanel.tab">
+            <Setter Property="Spacing" Value="4" />
+            <Setter Property="Margin" Value="0,10,0,0" />
+            <Setter Property="MinHeight" Value="231" />
+        </Style>
+        <Style Selector="TextBlock.h2.first">
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
     </Window.Styles>
 
     <StackPanel Margin="16" Spacing="12">
@@ -117,88 +131,118 @@
             </StackPanel>
         </Border>
 
-        <!-- settings, collapsed by default to keep the window compact -->
+        <!-- settings, collapsed by default to keep the window compact; tabs keep it short when open -->
         <Expander Header="Settings" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-        <Border Classes="panel">
-            <StackPanel Spacing="4">
-                <TextBlock Classes="h2" Text="COM" Margin="0,0,0,4" />
-                <CheckBox IsChecked="{Binding Spacing833}" Content="8.33 kHz channels on the inner knob (long-press ACT/STBY on COM to toggle)" />
-                <CheckBox IsChecked="{Binding CompactCom}" Content="Compact display: 123.405 shows as 23.405" />
+        <Border Classes="panel" Padding="12,4,12,12">
+            <TabControl Classes="settings">
+                <TabItem Header="Radios">
+                    <StackPanel Classes="tab">
+                        <TextBlock Classes="h2 first" Text="COM" />
+                        <CheckBox IsChecked="{Binding Spacing833}" Content="8.33 kHz channels on the inner knob (long-press ACT/STBY on COM to toggle)" />
+                        <CheckBox IsChecked="{Binding CompactCom}" Content="Compact display: 123.405 shows as 23.405" />
 
-                <TextBlock Classes="h2" Text="Transponder / altimeter" />
-                <Grid ColumnDefinitions="Auto,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="16">
-                    <TextBlock Text="Altimeter unit" VerticalAlignment="Center" />
-                    <RadioButton Grid.Column="1" GroupName="Baro" IsChecked="{Binding BaroHpa}" Content="hPa" />
-                    <RadioButton Grid.Column="2" GroupName="Baro" IsChecked="{Binding BaroInHg}" Content="inHg" />
+                        <TextBlock Classes="h2" Text="Transponder / altimeter" />
+                        <Grid ColumnDefinitions="Auto,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="16">
+                            <TextBlock Text="Altimeter unit" VerticalAlignment="Center" />
+                            <RadioButton Grid.Column="1" GroupName="Baro" IsChecked="{Binding BaroHpa}" Content="hPa" />
+                            <RadioButton Grid.Column="2" GroupName="Baro" IsChecked="{Binding BaroInHg}" Content="inHg" />
 
-                    <TextBlock Grid.Row="1" Text="VFR squawk (hold ACT/STBY)" VerticalAlignment="Center" />
-                    <RadioButton Grid.Row="1" Grid.Column="1" GroupName="Vfr" IsChecked="{Binding Vfr7000}" Content="7000 (Europe)" />
-                    <RadioButton Grid.Row="1" Grid.Column="2" GroupName="Vfr" IsChecked="{Binding Vfr1200}" Content="1200 (US)" />
-                </Grid>
-                <TextBlock Classes="caption" TextWrapping="Wrap"
-                           Text="XPDR: squawk on the left (outer knob = first two digits, inner = last two), altimeter on the right. Press ACT/STBY to switch which one the knobs edit. Hold it to set the VFR squawk, or standard pressure when the altimeter is selected." />
+                            <TextBlock Grid.Row="1" Text="VFR squawk (hold ACT/STBY)" VerticalAlignment="Center" />
+                            <RadioButton Grid.Row="1" Grid.Column="1" GroupName="Vfr" IsChecked="{Binding Vfr7000}" Content="7000 (Europe)" />
+                            <RadioButton Grid.Row="1" Grid.Column="2" GroupName="Vfr" IsChecked="{Binding Vfr1200}" Content="1200 (US)" />
+                        </Grid>
+                        <TextBlock Classes="caption" TextWrapping="Wrap"
+                                   Text="XPDR: squawk on the left (outer knob = first two digits, inner = last two), altimeter on the right. Press ACT/STBY to switch which one the knobs edit. Hold it to set the VFR squawk, or standard pressure when the altimeter is selected." />
+                    </StackPanel>
+                </TabItem>
 
-                <TextBlock Classes="h2" Text="GPS (X-Plane 12)" />
-                <CheckBox IsChecked="{Binding GpsControl}" Content="Use ADF and DME to control the GNS 430/530 instead of the ADF and DME radios" />
-                <StackPanel Orientation="Horizontal" Spacing="16" IsEnabled="{Binding GpsControl}">
-                    <TextBlock Text="Lower row controls" VerticalAlignment="Center" />
-                    <RadioButton GroupName="LowerGps" IsChecked="{Binding LowerRowGps2}" Content="GPS 2" />
-                    <RadioButton GroupName="LowerGps" IsChecked="{Binding LowerRowGps1}" Content="GPS 1 (aircraft with one GNS)" />
-                </StackPanel>
-                <TextBlock Classes="caption" TextWrapping="Wrap"
-                           Text="The upper row controls GPS 1. ADF types: big knob = next field or letter, small knob = the letter, tap ACT/STBY = ENT, hold = CRSR. DME has the other keys: the small knob chooses one (0 D→, 1 MENU, 2 FPL, 3 PROC, 4 CDI, 5 OBS, 6 MSG, 7 VNAV, -1 CLR held), a tap presses it, a hold is CLR, the big knob sets the map range. In MSFS, ADF and DME stay radios for now." />
+                <TabItem Header="Knobs">
+                    <StackPanel Classes="tab">
+                        <TextBlock Classes="h2 first" Text="COM knob acceleration" />
+                        <CheckBox IsChecked="{Binding AccelerationEnabled}" Content="Accelerate fast spins on COM1 and COM2 (all other knobs move one step per detent)" />
+                        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="6">
+                            <TextBlock Text="Fast below (ms)" VerticalAlignment="Center" />
+                            <NumericUpDown Grid.Column="1" Minimum="5" Maximum="500" Value="{Binding FastDetentMs}" />
+                            <TextBlock Grid.Column="2" Text="steps ×" VerticalAlignment="Center" />
+                            <NumericUpDown Grid.Column="3" Minimum="1" Maximum="50" Value="{Binding FastMultiplier}" />
 
-                <TextBlock Classes="h2" Text="COM knob acceleration" />
-                <CheckBox IsChecked="{Binding AccelerationEnabled}" Content="Accelerate fast spins on COM1 and COM2 (all other knobs move one step per detent)" />
-                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="6">
-                    <TextBlock Text="Fast below (ms)" VerticalAlignment="Center" />
-                    <NumericUpDown Grid.Column="1" Minimum="5" Maximum="500" Value="{Binding FastDetentMs}" />
-                    <TextBlock Grid.Column="2" Text="steps ×" VerticalAlignment="Center" />
-                    <NumericUpDown Grid.Column="3" Minimum="1" Maximum="50" Value="{Binding FastMultiplier}" />
+                            <TextBlock Grid.Row="1" Text="Medium below (ms)" VerticalAlignment="Center" />
+                            <NumericUpDown Grid.Row="1" Grid.Column="1" Minimum="5" Maximum="1000" Value="{Binding MediumDetentMs}" />
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="steps ×" VerticalAlignment="Center" />
+                            <NumericUpDown Grid.Row="1" Grid.Column="3" Minimum="1" Maximum="50" Value="{Binding MediumMultiplier}" />
+                        </Grid>
 
-                    <TextBlock Grid.Row="1" Text="Medium below (ms)" VerticalAlignment="Center" />
-                    <NumericUpDown Grid.Row="1" Grid.Column="1" Minimum="5" Maximum="1000" Value="{Binding MediumDetentMs}" />
-                    <TextBlock Grid.Row="1" Grid.Column="2" Text="steps ×" VerticalAlignment="Center" />
-                    <NumericUpDown Grid.Row="1" Grid.Column="3" Minimum="1" Maximum="50" Value="{Binding MediumMultiplier}" />
+                        <TextBlock Classes="h2" Text="ACT/STBY" />
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="Long press (ms)" VerticalAlignment="Center" />
+                            <NumericUpDown Minimum="200" Maximum="3000" Increment="50" Value="{Binding LongPressMs}" />
+                        </StackPanel>
+                        <TextBlock Classes="caption" TextWrapping="Wrap"
+                                   Text="How long ACT/STBY must be held for a hold: 8.33/25 kHz on COM, the VFR squawk or standard pressure on XPDR, CRSR and CLR on the GPS." />
+                    </StackPanel>
+                </TabItem>
 
-                    <TextBlock Grid.Row="2" Text="Long press (ms)" VerticalAlignment="Center" />
-                    <NumericUpDown Grid.Row="2" Grid.Column="1" Minimum="200" Maximum="3000" Increment="50" Value="{Binding LongPressMs}" />
-                </Grid>
+                <TabItem Header="GPS">
+                    <StackPanel Classes="tab">
+                        <TextBlock Classes="h2 first" Text="GNS 430/530 (X-Plane 12)" />
+                        <CheckBox IsChecked="{Binding GpsControl}" Content="Use ADF and DME to control the GNS 430/530 instead of the ADF and DME radios" />
+                        <StackPanel Orientation="Horizontal" Spacing="16" IsEnabled="{Binding GpsControl}">
+                            <TextBlock Text="Lower row controls" VerticalAlignment="Center" />
+                            <RadioButton GroupName="LowerGps" IsChecked="{Binding LowerRowGps2}" Content="GPS 2" />
+                            <RadioButton GroupName="LowerGps" IsChecked="{Binding LowerRowGps1}" Content="GPS 1 (aircraft with one GNS)" />
+                        </StackPanel>
+                        <TextBlock Classes="caption" TextWrapping="Wrap"
+                                   Text="The upper row controls GPS 1. ADF types: big knob = next field or letter, small knob = the letter, press ACT/STBY = ENT, hold = CRSR. DME has the other keys: the small knob chooses one (0 D→, 1 MENU, 2 FPL, 3 PROC, 4 CDI, 5 OBS, 6 MSG, 7 VNAV, -1 CLR held), a press sends it, a hold is CLR, the big knob sets the map range. In MSFS, ADF and DME stay radios for now." />
+                    </StackPanel>
+                </TabItem>
 
-                <TextBlock Classes="h2" Text="Window" />
-                <CheckBox IsChecked="{Binding ShowReaderAtStart}" Content="Show the readme and notices when RadioBridge starts" />
-                <CheckBox IsChecked="{Binding CloseToTray}" Content="Keep running in the tray when the window is closed" />
-                <CheckBox IsChecked="{Binding StartInTray}" Content="Start hidden in the tray (minimized if the tray option is off)" />
+                <TabItem Header="Simulators">
+                    <StackPanel Classes="tab">
+                        <TextBlock Classes="h2 first" Text="Simulators (applied on restart)" />
+                        <StackPanel Orientation="Horizontal" Spacing="16">
+                            <CheckBox IsChecked="{Binding MsfsEnabled}" Content="MSFS" />
+                            <CheckBox IsChecked="{Binding XPlaneEnabled}" Content="X-Plane, Web API port" />
+                            <NumericUpDown Minimum="1" Maximum="65535" Width="150" Value="{Binding XPlanePort}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,6,0,0">
+                            <TextBlock Text="SimConnect library" VerticalAlignment="Center" />
+                            <TextBlock Classes="caption" Text="{Binding SimConnectLibrary}" ToolTip.Tip="{Binding SimConnectLibrary}"
+                                       MaxWidth="330" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                            <Button Content="Browse…" Click="OnLocateSimConnect" />
+                            <Button Content="Automatic" IsVisible="{Binding HasSimConnectPath}" Click="OnUseAutomaticSimConnect" />
+                        </StackPanel>
+                        <TextBlock Classes="caption" TextWrapping="Wrap"
+                                   Text="MSFS is reached through its SimConnect library. RadioBridge uses the one in your MSFS installation, so you only need to browse if it can't find one." />
 
-                <TextBlock Classes="h2" Text="Test mode" />
-                <CheckBox IsChecked="{Binding TestMode}" IsEnabled="{Binding !TestModeForced}"
-                          Content="Drive the panel with built-in test radios while no simulator is connected" />
-                <TextBlock Classes="caption" IsVisible="{Binding TestModeForced}" Text="On for this run (started with --test-mode)." />
+                        <TextBlock Classes="h2" Text="Test mode" />
+                        <CheckBox IsChecked="{Binding TestMode}" IsEnabled="{Binding !TestModeForced}"
+                                  Content="Drive the panel with built-in test radios while no simulator is connected" />
+                        <TextBlock Classes="caption" IsVisible="{Binding TestModeForced}" Text="On for this run (started with --test-mode)." />
+                    </StackPanel>
+                </TabItem>
 
-                <TextBlock Classes="h2" Text="Debug" />
-                <CheckBox IsChecked="{Binding RecordAtStart}" Content="Record a debug log every time RadioBridge starts" />
-                <TextBlock Classes="caption" TextWrapping="Wrap"
-                           Text="For problems that show up right after starting. Leave it off otherwise: Record debug log below records on demand. The newest 20 recordings are kept." />
+                <TabItem Header="Window">
+                    <StackPanel Classes="tab">
+                        <TextBlock Classes="h2 first" Text="Window" />
+                        <CheckBox IsChecked="{Binding ShowReaderAtStart}" Content="Show the readme and notices when RadioBridge starts" />
+                        <CheckBox IsChecked="{Binding CloseToTray}" Content="Keep running in the tray when the window is closed" />
+                        <CheckBox IsChecked="{Binding StartInTray}" Content="Start hidden in the tray (minimized if the tray option is off)" />
+                    </StackPanel>
+                </TabItem>
 
-                <TextBlock Classes="h2" Text="Simulators (applied on restart)" />
-                <StackPanel Orientation="Horizontal" Spacing="16">
-                    <CheckBox IsChecked="{Binding MsfsEnabled}" Content="MSFS" />
-                    <CheckBox IsChecked="{Binding XPlaneEnabled}" Content="X-Plane, Web API port" />
-                    <NumericUpDown Minimum="1" Maximum="65535" Width="150" Value="{Binding XPlanePort}" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,6,0,0">
-                    <TextBlock Text="SimConnect library" VerticalAlignment="Center" />
-                    <TextBlock Classes="caption" Text="{Binding SimConnectLibrary}" ToolTip.Tip="{Binding SimConnectLibrary}"
-                               MaxWidth="330" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                    <Button Content="Browse…" Click="OnLocateSimConnect" />
-                    <Button Content="Automatic" IsVisible="{Binding HasSimConnectPath}" Click="OnUseAutomaticSimConnect" />
-                </StackPanel>
-                <TextBlock Classes="caption" TextWrapping="Wrap"
-                           Text="MSFS is reached through its SimConnect library. RadioBridge uses the one in your MSFS installation, so you only need to browse if it can't find one." />
+                <TabItem Header="Debug">
+                    <StackPanel Classes="tab">
+                        <TextBlock Classes="h2 first" Text="Debug recording" />
+                        <CheckBox IsChecked="{Binding RecordAtStart}" Content="Record a debug log every time RadioBridge starts" />
+                        <TextBlock Classes="caption" TextWrapping="Wrap"
+                                   Text="For problems that show up right after starting. Leave it off otherwise: Record debug log below records on demand. The newest 20 recordings are kept." />
 
-                <TextBlock Classes="caption" Margin="0,10,0,0" TextWrapping="Wrap" Text="{Binding SettingsPath, StringFormat='Settings: {0}'}" />
-                <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding LogPath, StringFormat='Logs: {0}'}" />
-            </StackPanel>
+                        <TextBlock Classes="h2" Text="Files" />
+                        <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding SettingsPath, StringFormat='Settings: {0}'}" />
+                        <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding LogPath, StringFormat='Logs: {0}'}" />
+                    </StackPanel>
+                </TabItem>
+            </TabControl>
         </Border>
         </Expander>
 
